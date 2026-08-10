@@ -18,7 +18,7 @@ OpenWrt integration for [Aether](https://github.com/CluvexStudio/Aether) — a c
 ## Install (one line)
 
 ```sh
-wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/v0.4.0/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
+wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
 ```
 
 During install you will be asked:
@@ -64,7 +64,7 @@ During install you will be asked:
 ## Uninstall
 
 ```sh
-wget -qO /tmp/aether-uninstall.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/v0.4.0/uninstall.sh
+wget -qO /tmp/aether-uninstall.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/uninstall.sh
 chmod +x /tmp/aether-uninstall.sh
 /tmp/aether-uninstall.sh           # remove application files; keep config and identities
 /tmp/aether-uninstall.sh --purge   # also permanently remove config and identity data
@@ -143,7 +143,7 @@ tar xzf /tmp/aether-files.tar.gz -C /
 Or just re-run the install script (it always fetches the latest files from GitHub):
 
 ```sh
-wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/v0.4.0/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
+wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
 ```
 
 ## Notes

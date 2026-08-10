@@ -292,7 +292,7 @@ SCRIPT_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")
 # --- Stage support files ---
 # When install.sh is run standalone (downloaded to /tmp), the files/ directory
 # isn't available locally.  Fall back to fetching each file from GitHub Raw.
-CLIENT_BRANCH="v0.4.0"
+CLIENT_BRANCH="main"
 RAW_BASE="https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/${CLIENT_BRANCH}/files"
 STAGE_ROOT="$TMP_DIR/root"
 

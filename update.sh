@@ -4,7 +4,7 @@
 set -u
 umask 077
 
-REPO_RAW="https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/v0.4.0"
+REPO_RAW="https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main"
 
 error() { printf '%s\n' "aether update: $*" >&2; }
 
