@@ -23,6 +23,9 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 
 در حین نصب از شما پرسیده می‌شود:
 
+- **نسخه هسته Aether**: حداکثر پنج ریلیز پایدار از v1.6.0 به بعد نمایش داده
+  می‌شود. با Enter نسخه پیش‌فرض v1.6.0 انتخاب می‌شود؛ می‌توانید یک گزینه یا
+  نسخه معتبر v1.6.0 به بعد را وارد کنید.
 - **curl نصب شود؟** به صورت پیش‌فرض **بله**. curl برای تست اتصال در LuCI و
   watchdog بازیابی تونل لازم است. با `--no-curl` از آن صرف‌نظر کنید؛ تونل کار
   می‌کند اما watchdog فعال نمی‌شود.
@@ -57,6 +60,8 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 /tmp/aether-install.sh --start         # نصب و شروع فوری
 /tmp/aether-install.sh --force-config  # بازنویسی کانفیگ موجود
 /tmp/aether-install.sh --no-curl       # رد شدن از پرامپت نصب curl
+/tmp/aether-install.sh --version v1.5.0 --start
+/tmp/aether-install.sh --non-interactive --start  # نسخه v1.6.0 بدون پرامپت
 ```
 
 ## حذف نصب
@@ -80,7 +85,16 @@ aether-ctl log              # نمایش لاگ‌های اخیر
 aether-ctl log 100          # نمایش 100 خط آخر
 aether-ctl test google.com  # تست اتصال از طریق تونل (نیاز به curl)
 aether-ctl version
+aether-ctl update
+aether-ctl update --version v1.5.0 --start
 ```
+
+## به‌روزرسانی
+
+دستور `aether-ctl update` آخرین `update.sh` این ریپو را دانلود و نصب‌کننده را
+دوباره اجرا می‌کند. کانفیگ `/etc/config/aether` و هویت‌های معتبر `/etc/aether`
+حفظ می‌شوند، مگر این‌که `--force-config` داده شود. فایل هسته همیشه با SHA-256
+ریلیز رسمی بررسی می‌شود.
 
 ## رابط وب LuCI
 
@@ -132,6 +146,9 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 ## نکات
 
 - نیاز به OpenWrt 24.10+ با musl libc (apk روی 25.12+، opkg روی قدیمی‌تر)
+- در نصب تازه، SOCKS5 روی `0.0.0.0:1819` است تا کلاینت‌های LAN استفاده کنند.
+  SOCKS5 احراز هویت ندارد؛ firewall بگذارید یا برای استفاده فقط روی روتر،
+  آدرس را به `127.0.0.1:1819` تغییر دهید.
 - `curl` اختیاری است (در حین نصب پرسیده می‌شود، به صورت پیش‌فرض بله). برای
   تست اتصال LuCI و watchdog بازیابی تونل استفاده می‌شود.
 - Secretهای Zero Trust در UCI فقط برای root ذخیره و در خروجی CLI و فرمان سرویس

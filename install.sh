@@ -13,6 +13,8 @@
 #   --start          Install and start immediately
 #   --force-config   Overwrite existing /etc/config/aether
 #   --no-curl        Skip curl installation
+#   --version <tag>  Install a specific Aether core release
+#   --non-interactive  Do not prompt; defaults to v1.6.0
 
 # No set -e — we handle errors explicitly with || blocks and error() calls.
 umask 077
@@ -33,13 +35,25 @@ error()   { printf "${RED}[-]${RESET} %s\n" "$*" >&2; }
 START_NOW=0
 FORCE_CONFIG=0
 SKIP_CURL=0
-for arg in "$@"; do
+NON_INTERACTIVE=0
+REQUESTED_VERSION=""
+while [ "$#" -gt 0 ]; do
+    arg="$1"
     case "$arg" in
         --start) START_NOW=1 ;;
         --force-config) FORCE_CONFIG=1 ;;
         --no-curl) SKIP_CURL=1 ;;
+        --non-interactive) NON_INTERACTIVE=1 ;;
+        --version)
+            shift
+            [ -n "${1:-}" ] || { error "--version requires a release tag"; exit 1; }
+            REQUESTED_VERSION="$1"
+            ;;
+        --version=*)
+            REQUESTED_VERSION="${arg#--version=}"
+            ;;
         -h|--help)
-            echo "Usage: $0 [--start] [--force-config] [--no-curl]"
+            echo "Usage: $0 [--start] [--force-config] [--no-curl] [--version <vX.Y.Z>] [--non-interactive]"
             exit 0
             ;;
         *)
@@ -47,6 +61,7 @@ for arg in "$@"; do
             exit 1
             ;;
     esac
+    shift
 done
 
 # --- Preflight ---
@@ -78,7 +93,8 @@ case "$ASSET_ARCH" in
 esac
 
 REPO="CluvexStudio/Aether"
-API_URL="https://api.github.com/repos/${REPO}/releases/latest"
+API_URL="https://api.github.com/repos/${REPO}/releases?per_page=30"
+DEFAULT_VERSION="v1.6.0"
 
 echo ""
 echo "========================================="
@@ -88,23 +104,107 @@ echo "========================================="
 echo ""
 
 # --- Check dependencies (wget is built-in on OpenWrt) ---
-for cmd in wget tar grep sed find sha256sum; do
+for cmd in wget tar grep sed awk find sha256sum; do
     command -v "$cmd" >/dev/null 2>&1 || { error "Missing: $cmd"; exit 1; }
 done
 
-# --- Fetch latest release info ---
-info "Fetching latest release from GitHub..."
+# --- Resolve core release ---
+valid_tag() {
+    case "$1" in
+        v[0-9]*.[0-9]*.[0-9]*)
+            echo "$1" | grep -Eq '^v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$'
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+supported_core_version() {
+    local tag="$1" version major minor rest
+    version="${tag#v}"
+    major="${version%%.*}"
+    rest="${version#*.}"
+    minor="${rest%%.*}"
+    [ "$major" -gt 1 ] 2>/dev/null ||
+        { [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 6 ] 2>/dev/null; }
+}
+
+contains_tag() {
+    echo "$AVAILABLE_TAGS" | grep -Fx "$1" >/dev/null 2>&1
+}
+
+info "Fetching available releases from GitHub..."
 RELEASE_JSON=$(wget -4 -T 30 -qO- "$API_URL" 2>/dev/null) || {
     error "Failed to reach GitHub API. Check internet connection."
     exit 1
 }
 
-TAG_NAME=$(echo "$RELEASE_JSON" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')
-if [ -z "$TAG_NAME" ]; then
-    error "Could not resolve latest release tag."
+# The GitHub response is compact JSON. Split release objects, retain only
+# published stable releases, and use API order (newest first).
+# Strip JSON whitespace before splitting release objects. GitHub returns pretty
+# printed JSON on some OpenWrt wget builds and compact JSON on others.
+AVAILABLE_TAGS=$(echo "$RELEASE_JSON" | tr -d '\r\n ' | sed 's/},{/}\n{/g' |
+    while IFS= read -r release; do
+        echo "$release" | grep -q '"draft":false' || continue
+        echo "$release" | grep -q '"prerelease":false' || continue
+        tag=$(echo "$release" | sed -n 's/.*"tag_name":"\([^"]*\)".*/\1/p')
+        valid_tag "$tag" || continue
+        supported_core_version "$tag" || continue
+        echo "$tag"
+    done | awk '!seen[$0]++' | awk 'NR<=5')
+
+if [ -z "$AVAILABLE_TAGS" ]; then
+    error "Could not resolve stable Aether release tags."
     exit 1
 fi
-success "Latest release: $TAG_NAME"
+
+if [ -n "$REQUESTED_VERSION" ]; then
+    valid_tag "$REQUESTED_VERSION" || {
+        error "Invalid release tag: $REQUESTED_VERSION (expected vX.Y.Z)"
+        exit 1
+    }
+    supported_core_version "$REQUESTED_VERSION" || {
+        error "Unsupported release tag: $REQUESTED_VERSION (v1.6.0 or newer is required)"
+        exit 1
+    }
+    TAG_NAME="$REQUESTED_VERSION"
+elif [ "$NON_INTERACTIVE" -eq 1 ] || [ ! -t 0 ]; then
+    TAG_NAME="$DEFAULT_VERSION"
+else
+    echo ""
+    echo "Available Aether core releases (v1.6.0 or newer):"
+    i=1
+    echo "$AVAILABLE_TAGS" | while IFS= read -r tag; do
+        [ -n "$tag" ] || continue
+        printf "  %s) %s\n" "$i" "$tag"
+        i=$((i + 1))
+    done
+    printf "Choose a number or type a version [%s]: " "$DEFAULT_VERSION"
+    read -r choice
+    case "$choice" in
+        '') TAG_NAME="$DEFAULT_VERSION" ;;
+        1|2|3|4|5)
+            TAG_NAME=$(echo "$AVAILABLE_TAGS" | awk -v n="$choice" 'NR == n { print; exit }')
+            ;;
+        *) TAG_NAME="$choice" ;;
+    esac
+fi
+
+valid_tag "$TAG_NAME" || {
+    error "Invalid release tag: $TAG_NAME (expected vX.Y.Z)"
+    exit 1
+}
+
+# A custom tag may be older than the displayed five. Verify it against its
+# release endpoint before using it in a download URL.
+if ! contains_tag "$TAG_NAME"; then
+    info "Verifying requested release: $TAG_NAME"
+    wget -4 -T 30 -qO- "https://api.github.com/repos/${REPO}/releases/tags/${TAG_NAME}" |
+        grep -q '"tag_name"' || {
+        error "Release $TAG_NAME was not found."
+        exit 1
+    }
+fi
+success "Selected release: $TAG_NAME"
 
 # --- Build canonical download URL ---
 # Do not parse browser_download_url from the API response. BusyBox grep/sed
@@ -159,7 +259,12 @@ chmod +x "$BINARY"
 success "Binary: $($BINARY --version 2>&1)"
 
 # --- Ask about curl ---
-if [ "$SKIP_CURL" -eq 0 ] && ! command -v curl >/dev/null 2>&1; then
+if [ "$SKIP_CURL" -eq 0 ] && [ "$NON_INTERACTIVE" -eq 1 ]; then
+    if ! command -v curl >/dev/null 2>&1; then
+        warn "curl is unavailable; non-interactive mode will not install packages."
+        warn "LuCI connection tests and the data-plane watchdog will remain unavailable."
+    fi
+elif [ "$SKIP_CURL" -eq 0 ] && ! command -v curl >/dev/null 2>&1; then
     echo ""
     printf "${YELLOW}Install curl?${RESET} (needed for LuCI tests and automatic tunnel recovery) [Y/n]: "
     read -r answer
@@ -187,7 +292,8 @@ SCRIPT_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")
 # --- Stage support files ---
 # When install.sh is run standalone (downloaded to /tmp), the files/ directory
 # isn't available locally.  Fall back to fetching each file from GitHub Raw.
-RAW_BASE="https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/files"
+CLIENT_BRANCH="main"
+RAW_BASE="https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/${CLIENT_BRANCH}/files"
 STAGE_ROOT="$TMP_DIR/root"
 
 stage_file() {

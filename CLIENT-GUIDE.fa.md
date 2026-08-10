@@ -43,6 +43,10 @@ Aether یک پراکسی محلی SOCKS5 ایجاد می‌کند و ترافی�
 - **Force Peer**: با وارد کردن `ip:port` اسکن را رد می‌کند.
 - **HTTP/2 Mode** و **H2 Peer** فقط برای MASQUE هستند.
 - **TLS Fragmentation** برای MASQUE روی HTTP/2 و در صورت مسدود بودن handshake است.
+- **HTTP CONNECT Proxy** به‌صورت اختیاری همان تونل را برای برنامه‌های بدون SOCKS5
+  فراهم می‌کند.
+- **MASQUE Startup Deadline** برای اتصال و اولین اعتبارسنجی داده محدودیت زمانی
+  می‌گذارد و مقدار پیش‌فرض آن ۳۰ ثانیه است.
 
 ### تنظیمات پایداری
 
@@ -61,6 +65,7 @@ Aether یک پراکسی محلی SOCKS5 ایجاد می‌کند و ترافی�
 - نام Team؛
 - Access Client ID؛
 - Access Client Secret؛
+- Existing Access Token برای استقرار headless؛
 - حالت اختیاری Gateway سازمان.
 
 Secret در `/etc/config/aether` ذخیره می‌شود، فایل فقط برای root قابل خواندن است
@@ -81,6 +86,8 @@ aether-ctl show
 aether-ctl log 100
 aether-ctl test google.com
 aether-ctl set protocol wg
+aether-ctl update
+aether-ctl update --version v1.5.0 --start
 ```
 
 گزینه Enable on Boot از کنترل runtime جدا است:
@@ -104,6 +111,18 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 chmod +x /tmp/aether-install.sh
 /tmp/aether-install.sh --start
 ```
+
+نصب‌کننده حداکثر پنج نسخه پایدار هسته از v1.6.0 به بعد را نمایش می‌دهد و
+پیش‌فرض آن v1.6.0 است. نسخه‌های قدیمی‌تر نمایش داده نمی‌شوند، چون جریان
+به‌روزرسانی این کلاینت را پشتیبانی نمی‌کنند. برای automation از
+`--non-interactive` استفاده کنید و برای نسخه مشخص v1.6.0 به بعد
+`--version vX.Y.Z` را بدهید. دستور `aether-ctl update` آخرین updater ریپو را
+دریافت کرده و همین فرآیند نصب را اجرا می‌کند. در آپدیت، کانفیگ و هویت‌ها حفظ
+می‌شوند مگر `--force-config` استفاده شود.
+
+نصب تازه روی `0.0.0.0:1819` گوش می‌دهد تا کلاینت‌های LAN بتوانند استفاده کنند.
+چون SOCKS5 احراز هویت ندارد، از firewall استفاده کنید یا برای استفاده فقط روی
+روتر، آدرس را به `127.0.0.1:1819` تغییر دهید.
 
 اگر بعد از آپدیت صفحه جدید LuCI را نمی‌بینید، با `Ctrl+F5` صفحه را hard refresh
 کنید یا از پنجره incognito/private و یا یک مرورگر جدید استفاده کنید. cache

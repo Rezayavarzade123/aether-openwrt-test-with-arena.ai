@@ -23,6 +23,9 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 
 During install you will be asked:
 
+- **Aether core version**: the newest stable releases from v1.6.0 onward are
+  shown (up to five). Press Enter for the v1.6.0 default, select a listed
+  release, or type a valid v1.6.0-or-newer `vX.Y.Z` version.
 - **Install curl?** Defaults to **Yes**. curl enables LuCI connection tests and end-to-end watchdog recovery. Use `--no-curl` to skip it; the tunnel will work, but the watchdog will not start.
 
 ## What it does
@@ -54,6 +57,8 @@ During install you will be asked:
 /tmp/aether-install.sh --start         # install and start now
 /tmp/aether-install.sh --force-config  # overwrite existing config
 /tmp/aether-install.sh --no-curl       # skip curl installation prompt
+/tmp/aether-install.sh --version v1.5.0 --start
+/tmp/aether-install.sh --non-interactive --start  # use v1.6.0, no prompts
 ```
 
 ## Uninstall
@@ -77,7 +82,23 @@ aether-ctl log              # show recent logs
 aether-ctl log 100          # show last 100 lines
 aether-ctl test google.com  # test connection through tunnel (needs curl)
 aether-ctl version
+aether-ctl update                       # fetch latest client updater, install v1.6.0
+aether-ctl update --version v1.5.0 --start
 ```
+
+## Updates
+
+`aether-ctl update` downloads the latest `update.sh` from this repository and
+re-runs the installer. Existing `/etc/config/aether` and valid identities in
+`/etc/aether` are preserved unless `--force-config` is supplied. The core
+archive is always verified against the matching upstream SHA-256 file.
+
+v0.4.0 defaults to Aether core **v1.6.0** and only offers v1.6.0 or newer core
+releases, because older cores cannot run this client's update flow. It adds
+HTTP CONNECT proxy,
+MASQUE startup deadline, WireGuard/gool profile retry, existing-token Zero
+Trust, and trace logging controls. Routing rules, ECH, custom DNS, TLS groups,
+performance profiles, and per-protocol identity paths remain core-only options.
 
 ## LuCI Web Interface
 
@@ -128,6 +149,9 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 ## Notes
 
 - Requires OpenWrt 24.10+ with musl libc (apk on 25.12+, opkg on older)
+- Fresh installs bind SOCKS5 to `0.0.0.0:1819` so LAN clients can use it.
+  SOCKS5 has no authentication; protect the port with firewall rules or change
+  the listen address to `127.0.0.1:1819` for router-local use.
 - `curl` is optional (asked during install, defaults to Yes). It enables LuCI connection tests and the data-plane recovery watchdog.
 - Zero Trust service-token secrets are kept in the root-only UCI config and redacted from CLI and service command output.
 - See [CLIENT-GUIDE.en.md](CLIENT-GUIDE.en.md) for the settings, protocols,
