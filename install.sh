@@ -118,6 +118,16 @@ valid_tag() {
     esac
 }
 
+supported_core_version() {
+    local tag="$1" version major minor rest
+    version="${tag#v}"
+    major="${version%%.*}"
+    rest="${version#*.}"
+    minor="${rest%%.*}"
+    [ "$major" -gt 1 ] 2>/dev/null ||
+        { [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 6 ] 2>/dev/null; }
+}
+
 contains_tag() {
     echo "$AVAILABLE_TAGS" | grep -Fx "$1" >/dev/null 2>&1
 }
@@ -138,6 +148,7 @@ AVAILABLE_TAGS=$(echo "$RELEASE_JSON" | tr -d '\r\n ' | sed 's/},{/}\n{/g' |
         echo "$release" | grep -q '"prerelease":false' || continue
         tag=$(echo "$release" | sed -n 's/.*"tag_name":"\([^"]*\)".*/\1/p')
         valid_tag "$tag" || continue
+        supported_core_version "$tag" || continue
         echo "$tag"
     done | awk '!seen[$0]++' | awk 'NR<=5')
 
@@ -151,12 +162,16 @@ if [ -n "$REQUESTED_VERSION" ]; then
         error "Invalid release tag: $REQUESTED_VERSION (expected vX.Y.Z)"
         exit 1
     }
+    supported_core_version "$REQUESTED_VERSION" || {
+        error "Unsupported release tag: $REQUESTED_VERSION (v1.6.0 or newer is required)"
+        exit 1
+    }
     TAG_NAME="$REQUESTED_VERSION"
 elif [ "$NON_INTERACTIVE" -eq 1 ] || [ ! -t 0 ]; then
     TAG_NAME="$DEFAULT_VERSION"
 else
     echo ""
-    echo "Available Aether core releases:"
+    echo "Available Aether core releases (v1.6.0 or newer):"
     i=1
     echo "$AVAILABLE_TAGS" | while IFS= read -r tag; do
         [ -n "$tag" ] || continue

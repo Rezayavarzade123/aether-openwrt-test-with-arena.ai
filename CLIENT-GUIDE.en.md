@@ -116,9 +116,11 @@ chmod +x /tmp/aether-install.sh
 /tmp/aether-install.sh --start
 ```
 
-The installer lists the five newest stable core releases and defaults to
-v1.6.0. For automation use `--non-interactive`; add `--version vX.Y.Z` to
-choose any valid published release. `aether-ctl update` fetches the latest
+The installer lists up to five newest stable core releases from v1.6.0 onward
+and defaults to v1.6.0. Older core releases are not offered because they do
+not understand this client's update flow. For automation use
+`--non-interactive`; add `--version vX.Y.Z` to choose a valid published release
+from v1.6.0 onward. `aether-ctl update` fetches the latest
 repository updater and runs the same installer flow. Updates preserve the
 UCI configuration and identities unless `--force-config` is specified.
 

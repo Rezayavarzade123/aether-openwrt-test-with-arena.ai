@@ -23,9 +23,9 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 
 During install you will be asked:
 
-- **Aether core version**: the five newest stable releases are shown. Press
-  Enter for the v1.6.0 default, select a listed release, or type a valid
-  `vX.Y.Z` version.
+- **Aether core version**: the newest stable releases from v1.6.0 onward are
+  shown (up to five). Press Enter for the v1.6.0 default, select a listed
+  release, or type a valid v1.6.0-or-newer `vX.Y.Z` version.
 - **Install curl?** Defaults to **Yes**. curl enables LuCI connection tests and end-to-end watchdog recovery. Use `--no-curl` to skip it; the tunnel will work, but the watchdog will not start.
 
 ## What it does
@@ -93,7 +93,9 @@ re-runs the installer. Existing `/etc/config/aether` and valid identities in
 `/etc/aether` are preserved unless `--force-config` is supplied. The core
 archive is always verified against the matching upstream SHA-256 file.
 
-v0.4.0 defaults to Aether core **v1.6.0** and adds HTTP CONNECT proxy,
+v0.4.0 defaults to Aether core **v1.6.0** and only offers v1.6.0 or newer core
+releases, because older cores cannot run this client's update flow. It adds
+HTTP CONNECT proxy,
 MASQUE startup deadline, WireGuard/gool profile retry, existing-token Zero
 Trust, and trace logging controls. Routing rules, ECH, custom DNS, TLS groups,
 performance profiles, and per-protocol identity paths remain core-only options.

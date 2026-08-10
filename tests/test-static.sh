@@ -14,6 +14,7 @@ assert_contains() {
 assert_contains install.sh 'DEFAULT_VERSION="v1.6.0"'
 assert_contains install.sh '--version'
 assert_contains install.sh '--non-interactive'
+assert_contains install.sh 'v1.6.0 or newer is required'
 assert_contains update.sh 'Aether OpenWrt Client updater'
 assert_contains files/usr/bin/aether-ctl 'do_update()'
 assert_contains files/etc/config/aether "option socks_listen '0.0.0.0:1819'"
