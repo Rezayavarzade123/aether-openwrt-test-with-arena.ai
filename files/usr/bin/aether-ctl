@@ -1,6 +1,6 @@
 #!/bin/sh
 # aether-ctl — CLI management tool for Aether on OpenWrt
-# Usage: aether-ctl {start|stop|restart|status|show|set|version|test}
+# Usage: aether-ctl {start|stop|restart|status|show|set|version|test|update}
 
 UCI="/sbin/uci"
 PROG="/usr/bin/aether"
@@ -104,6 +104,7 @@ do_show() {
 	local enabled=$(uci_get enabled)
 	local protocol=$(uci_get protocol)
 	local socks_listen=$(uci_get socks_listen)
+	local http_proxy=$(uci_get http_proxy)
 	local scan_mode=$(uci_get scan_mode)
 	local ip_version=$(uci_get ip_version)
 	local obfuscation_profile=$(uci_get obfuscation_profile)
@@ -114,18 +115,22 @@ do_show() {
 	local keepalive=$(uci_get keepalive)
 	local reconnect_secs=$(uci_get reconnect_secs)
 	local validate_secs=$(uci_get validate_secs)
+	local startup_secs=$(uci_get startup_secs)
 	local quick_reconnect=$(uci_get quick_reconnect)
 	local no_data_check=$(uci_get no_data_check)
+	local no_profile_retry=$(uci_get no_profile_retry)
 	local log_level=$(uci_get log_level)
 	local team=$(uci_get team)
 	local access_id=$(uci_get access_id)
 	local access_secret=$(uci_get access_secret)
+	local access_token=$(uci_get access_token)
 	local gateway=$(uci_get gateway)
 	local watchdog_enabled=$(uci_get watchdog_enabled)
 
 	log_key "Boot Enabled" "$([ "$enabled" = "1" ] && echo "yes" || echo "no")"
 	log_key "Protocol" "${protocol:-masque}"
 	log_key "SOCKS Listen" "${socks_listen:-0.0.0.0:1819}"
+	[ -n "$http_proxy" ] && log_key "HTTP Proxy" "$http_proxy"
 	log_key "Scan Mode" "${scan_mode:-balanced}"
 	log_key "IP Version" "${ip_version:-ipv4}"
 	log_key "Obfuscation" "${obfuscation_profile:-firewall}"
@@ -136,13 +141,17 @@ do_show() {
 	log_key "Keepalive" "${keepalive:-5}s"
 	log_key "Reconnect" "${reconnect_secs:-2}s"
 	log_key "Validate" "${validate_secs:-10}s"
+	[ "${protocol:-masque}" = "masque" ] && log_key "Startup Deadline" "${startup_secs:-30}s"
 	log_key "Quick Reconnect" "$([ "$quick_reconnect" = "1" ] && echo "on" || echo "off")"
 	log_key "No Data Check" "$([ "$no_data_check" = "1" ] && echo "on" || echo "off")"
+	[ "${protocol:-masque}" != "masque" ] &&
+		log_key "Profile Retry" "$([ "$no_profile_retry" = "1" ] && echo "off" || echo "on")"
 	log_key "Log Level" "${log_level:-info}"
 	log_key "Zero Trust Team" "${team:-disabled}"
 	if [ -n "$team" ]; then
 		log_key "Access Client ID" "$([ -n "$access_id" ] && echo "configured" || echo "missing")"
 		log_key "Access Secret" "$([ -n "$access_secret" ] && echo "configured (redacted)" || echo "missing")"
+		log_key "Access Token" "$([ -n "$access_token" ] && echo "configured (redacted)" || echo "missing")"
 		log_key "Gateway Proxy" "$([ "$gateway" = "1" ] && echo "on" || echo "off")"
 	fi
 	log_key "Data Watchdog" "$([ "$watchdog_enabled" = "0" ] && echo "off" || echo "on")"
@@ -239,6 +248,7 @@ do_set() {
 		echo "  enabled             yes/no"
 		echo "  protocol            masque/wg/gool"
 		echo "  socks_listen        ip:port"
+		echo "  http_proxy          ip:port (optional HTTP CONNECT proxy)"
 		echo "  scan_mode           turbo/balanced/thorough/stealth/ironclad"
 		echo "  ip_version          ipv4/ipv6/both"
 		echo "  obfuscation_profile firewall/gfw/balanced/aggressive/light/off"
@@ -249,12 +259,15 @@ do_set() {
 		echo "  keepalive           seconds"
 		echo "  reconnect_secs      seconds"
 		echo "  validate_secs       seconds"
+		echo "  startup_secs        seconds (MASQUE only)"
 		echo "  quick_reconnect     0/1"
 		echo "  no_data_check       0/1"
+		echo "  no_profile_retry    0/1 (WireGuard/gool only)"
 		echo "  log_level           info/debug/warn/error"
 		echo "  team                Zero Trust team name"
 		echo "  access_id           service-token client ID"
 		echo "  access_secret       service-token secret (redacted in output)"
+		echo "  access_token        existing Zero Trust token (redacted in output)"
 		echo "  gateway             0/1"
 		echo "  watchdog_enabled    0/1"
 		echo "  watchdog_interval   seconds"
@@ -284,7 +297,7 @@ do_set() {
 				ipv4|ipv6|both) ;;
 				*) log_err "Invalid ip_version: $value (use ipv4/ipv6/both)"; return 1 ;;
 			esac ;;
-		http2_mode|fragment_tls|quick_reconnect|no_data_check|gateway|watchdog_enabled)
+		http2_mode|fragment_tls|quick_reconnect|no_data_check|no_profile_retry|gateway|watchdog_enabled)
 			case "$value" in
 				0|1|on|off|yes|no)
 					case "$value" in
@@ -293,11 +306,11 @@ do_set() {
 					esac ;;
 				*) log_err "Invalid value: $value (use 0/1)"; return 1 ;;
 			esac ;;
-		keepalive|reconnect_secs|validate_secs|watchdog_interval|watchdog_failures|watchdog_startup_grace|watchdog_cooldown)
+		keepalive|reconnect_secs|validate_secs|startup_secs|watchdog_interval|watchdog_failures|watchdog_startup_grace|watchdog_cooldown)
 			case "$value" in
 				''|*[!0-9]*) log_err "Invalid numeric value: $value"; return 1 ;;
 			esac ;;
-		socks_listen|obfuscation_profile|h2_peer|fragment_size|fragment_delay|peer|log_level|team|access_id|access_secret) ;;
+		socks_listen|http_proxy|obfuscation_profile|h2_peer|fragment_size|fragment_delay|peer|log_level|team|access_id|access_secret|access_token) ;;
 		*)
 			log_err "Unknown configuration option: $key"
 			return 1
@@ -313,8 +326,8 @@ do_set() {
 			/etc/init.d/aether disable
 		fi
 	fi
-	if [ "$key" = "access_secret" ]; then
-		log_info "Set access_secret = (redacted)"
+	if [ "$key" = "access_secret" ] || [ "$key" = "access_token" ]; then
+		log_info "Set $key = (redacted)"
 	else
 		log_info "Set $key = $value"
 	fi
@@ -339,6 +352,60 @@ do_version() {
 	fi
 }
 
+do_update() {
+	local raw_base="https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main"
+	local tmpdir updater arg update_args
+
+	if [ "$(id -u)" -ne 0 ]; then
+		log_err "Run update as root."
+		return 1
+	fi
+
+	update_args="$*"
+	while [ "$#" -gt 0 ]; do
+		arg="$1"
+		case "$arg" in
+			--start|--force-config|--no-curl|--non-interactive|--version=*) ;;
+			--version)
+				shift
+				[ -n "${1:-}" ] || {
+					log_err "--version requires a release tag"
+					return 1
+				}
+				;;
+			*)
+				log_err "Unsupported update option: $arg"
+				return 1
+				;;
+		esac
+		shift
+	done
+
+	command -v wget >/dev/null 2>&1 || {
+		log_err "wget is required to update"
+		return 1
+	}
+	tmpdir=$(mktemp -d /tmp/aether-ctl-update.XXXXXX) || {
+		log_err "Could not create temporary directory"
+		return 1
+	}
+	trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
+	updater="$tmpdir/update.sh"
+	log_info "Downloading current updater..."
+	wget -4 -T 30 -O "$updater" "$raw_base/update.sh" || {
+		log_err "Failed to download updater"
+		return 1
+	}
+	[ -s "$updater" ] && grep -q 'Aether OpenWrt Client' "$updater" || {
+		log_err "Downloaded updater is empty or invalid"
+		return 1
+	}
+	chmod 700 "$updater" || return 1
+	# Arguments are checked above; intentional splitting preserves their shape.
+	# shellcheck disable=SC2086
+	"$updater" $update_args
+}
+
 do_log() {
 	local lines="${1:-50}"
 	echo "=== Aether Logs (last $lines lines) ==="
@@ -361,6 +428,7 @@ case "${1:-}" in
 	test)     do_test "$2" ;;
 	log)      do_log "$2" ;;
 	version)  do_version ;;
+	update)   shift; do_update "$@" ;;
 	*)
 		echo "Aether OpenWrt Controller"
 		echo ""
@@ -376,6 +444,7 @@ case "${1:-}" in
 		echo "  test <host>     Test connection through the tunnel"
 		echo "  log [lines]     Show Aether logs (default 50 lines)"
 		echo "  version         Show Aether binary version"
+		echo "  update [opts]   Download current updater and reinstall"
 		echo ""
 		echo "Examples:"
 		echo "  aether-ctl start"
@@ -384,5 +453,6 @@ case "${1:-}" in
 		echo "  aether-ctl set obfuscation_profile aggressive"
 		echo "  aether-ctl test google.com"
 		echo "  aether-ctl set enabled no"
+		echo "  aether-ctl update --version v1.6.0 --start"
 		;;
 esac

@@ -24,10 +24,10 @@ cmd_list() {
 cmd_get() {
 	local cfg="aether.${1:-main}"
 	json_init
-	for key in enabled protocol socks_listen scan_mode ip_version \
+	for key in enabled protocol socks_listen http_proxy scan_mode ip_version \
 		obfuscation_profile http2_mode fragment_tls fragment_size \
 		fragment_delay peer keepalive reconnect_secs validate_secs \
-		quick_reconnect no_data_check config_path log_level; do
+		startup_secs quick_reconnect no_data_check no_profile_retry config_path log_level; do
 		local val=$($UCI get "$cfg.$key" 2>/dev/null)
 		json_add_string "$key" "$val"
 	done

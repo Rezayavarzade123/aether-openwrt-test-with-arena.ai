@@ -44,6 +44,12 @@ endpoint and avoids a full scan when possible.
 - **Force Peer**: optionally skip scanning and use a known `ip:port`.
 - **HTTP/2 Mode** and **H2 Peer** apply only to MASQUE.
 - **TLS Fragmentation** applies to MASQUE HTTP/2 when its handshake is blocked.
+- **HTTP CONNECT Proxy** optionally exposes the same tunnel for applications
+  that do not support SOCKS5.
+- **MASQUE Startup Deadline** bounds connection and first data validation;
+  its default is 30 seconds.
+- **Disable Profile Retry** applies to WireGuard/gool and prevents retrying
+  alternate noise profiles after a failed scan.
 
 ### Reliability settings
 
@@ -63,6 +69,7 @@ enrollment with:
 - Team name;
 - Access client ID;
 - Access client secret;
+- Existing access token (for headless deployments);
 - optional organization Gateway mode.
 
 The secret is stored in `/etc/config/aether`, protected as a root-only file,
@@ -83,6 +90,8 @@ aether-ctl show
 aether-ctl log 100
 aether-ctl test google.com
 aether-ctl set protocol wg
+aether-ctl update
+aether-ctl update --version v1.5.0 --start
 ```
 
 `Enable on Boot` is separate from runtime control:
@@ -106,6 +115,16 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 chmod +x /tmp/aether-install.sh
 /tmp/aether-install.sh --start
 ```
+
+The installer lists the five newest stable core releases and defaults to
+v1.6.0. For automation use `--non-interactive`; add `--version vX.Y.Z` to
+choose any valid published release. `aether-ctl update` fetches the latest
+repository updater and runs the same installer flow. Updates preserve the
+UCI configuration and identities unless `--force-config` is specified.
+
+Fresh installs listen on `0.0.0.0:1819` for LAN clients. Because SOCKS5 has no
+authentication, protect the port with firewall rules or change it to
+`127.0.0.1:1819` for router-local use.
 
 If the new LuCI page does not appear after an update, sign out and back in,
 use `Ctrl+F5`, or open LuCI in an incognito/private window or a different

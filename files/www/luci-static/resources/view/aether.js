@@ -568,6 +568,11 @@ return view.extend({
 			o.datatype = 'ipaddrport';
 			o.rmempty = false;
 
+			o = s.option(form.Value, 'http_proxy', 'HTTP CONNECT Proxy',
+				'Optional HTTP CONNECT listener. Leave empty to disable it.');
+			o.datatype = 'or(ipaddrport,string)';
+			o.rmempty = true;
+
 			s = m.section(form.NamedSection, 'main', 'aether', 'Network');
 
 			o = s.option(form.ListValue, 'scan_mode', 'Scan Mode',
@@ -658,6 +663,12 @@ return view.extend({
 			o.rmempty = true;
 			o.depends('team', /.+/);
 
+			o = s.option(form.Value, 'access_token', 'Existing Access Token',
+				'Optional existing Zero Trust token. It replaces service-token credentials when set.');
+			o.password = true;
+			o.rmempty = true;
+			o.depends('team', /.+/);
+
 			o = s.option(form.Flag, 'gateway', 'Use Organization Gateway',
 				'Opt in to organization filtering and logging for HTTP/HTTPS traffic');
 			o.default = '0';
@@ -695,6 +706,7 @@ return view.extend({
 			o.value('warn', 'Warning');
 			o.value('info', 'Info');
 			o.value('debug', 'Debug');
+			o.value('trace', 'Trace');
 			o.default = 'info';
 
 			o = s.option(form.Value, 'keepalive', 'Keepalive (s)');
@@ -713,6 +725,12 @@ return view.extend({
 			o.default = '10';
 			o.datatype = 'min(1)';
 
+			o = s.option(form.Value, 'startup_secs', 'MASQUE Startup Deadline (s)',
+				'Maximum total time for MASQUE connection and first data validation.');
+			o.default = '30';
+			o.datatype = 'min(1)';
+			o.depends('protocol', 'masque');
+
 			o = s.option(form.Flag, 'quick_reconnect', 'Quick Reconnect',
 				'Re-verify the last known-good gateway first, then scan if it is unavailable');
 			o.default = '1';
@@ -720,6 +738,12 @@ return view.extend({
 			o = s.option(form.Flag, 'no_data_check', 'Skip Data Validation',
 				'Trust gateway after handshake only (faster but less reliable)');
 			o.default = '0';
+
+			o = s.option(form.Flag, 'no_profile_retry', 'Disable Profile Retry',
+				'Do not retry alternate noise profiles after a WireGuard or gool scan failure.');
+			o.default = '0';
+			o.depends('protocol', 'wg');
+			o.depends('protocol', 'gool');
 
 			o = s.option(form.Value, 'config_path', 'Config Path');
 			o.default = '/etc/aether/aether.toml';
