@@ -34,6 +34,31 @@ identity_sibling() {
 	esac
 }
 
+# v1.6 introduced HTTP CONNECT, the MASQUE startup deadline, and core log
+# controls. Newer core versions inherit the v1.6 capability set until a later
+# version receives an explicit compatibility profile here.
+core_version() {
+	"$PROG" --version 2>/dev/null | awk 'NR == 1 {
+		for (i = 1; i <= NF; i++) {
+			version = $i
+			sub(/^v/, "", version)
+			if (version ~ /^[0-9]+\.[0-9]+\.[0-9]+/) {
+				print version
+				exit
+			}
+		}
+	}'
+}
+
+core_supports_v16() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 1 ] 2>/dev/null ||
+		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 6 ] 2>/dev/null; }
+}
+
 start_service() {
 	config_load aether
 
@@ -43,6 +68,19 @@ start_service() {
 	local keepalive reconnect_secs validate_secs startup_secs quick_reconnect
 	local no_data_check config_path log_level
 	local no_profile_retry team access_id access_secret access_token
+	local installed_version supports_v16
+
+	installed_version="$(core_version)"
+	if [ -z "$installed_version" ]; then
+		logger -t aether "ERROR: could not determine installed Aether core version"
+		echo "aether: cannot determine /usr/bin/aether version" >&2
+		return 1
+	fi
+	if core_supports_v16 "$installed_version"; then
+		supports_v16=1
+	else
+		supports_v16=0
+	fi
 
 	config_get protocol main protocol 'masque'
 	config_get socks_listen main socks_listen '0.0.0.0:1819'
@@ -100,7 +138,11 @@ start_service() {
 	procd_open_instance "core"
 	procd_set_param command "$command"
 	procd_append_param command --bind "$socks_listen"
-	[ -n "$http_proxy" ] && procd_append_param command --http-proxy "$http_proxy"
+	if [ -n "$http_proxy" ] && [ "$supports_v16" -eq 1 ]; then
+		procd_append_param command --http-proxy "$http_proxy"
+	elif [ -n "$http_proxy" ]; then
+		logger -t aether "Ignoring HTTP CONNECT proxy: Aether v$installed_version requires v1.6.0 or newer"
+	fi
 	procd_append_param command --config "$config_path"
 	case "$protocol" in
 		masque)
@@ -121,7 +163,7 @@ start_service() {
 			return 1
 			;;
 	esac
-	logger -t aether "Starting Aether (protocol=$protocol, config=$config_path, obfuscation=$obfuscation_profile)"
+	logger -t aether "Starting Aether core v$installed_version (protocol=$protocol, config=$config_path, obfuscation=$obfuscation_profile)"
 
 	case "$scan_mode" in
 		turbo|balanced|thorough|stealth|ironclad)
@@ -147,12 +189,20 @@ start_service() {
 	fi
 	[ -n "$peer" ] && procd_append_param command --peer "$peer"
 	[ "$protocol" != "masque" ] && procd_append_param command --keepalive "$keepalive"
-	procd_append_param command --reconnect-secs "$reconnect_secs"
-	procd_append_param command --validate-secs "$validate_secs"
-	[ "$protocol" = "masque" ] && procd_append_param command --startup-secs "$startup_secs"
+	# v1.5 documents these flags for MASQUE only. v1.6+ accepts the
+	# integration's existing all-transport reconnect/validation behavior.
+	if [ "$protocol" = "masque" ] || [ "$supports_v16" -eq 1 ]; then
+		procd_append_param command --reconnect-secs "$reconnect_secs"
+		procd_append_param command --validate-secs "$validate_secs"
+	fi
+	if [ "$protocol" = "masque" ] && [ "$supports_v16" -eq 1 ]; then
+		procd_append_param command --startup-secs "$startup_secs"
+	fi
 	[ "$protocol" != "masque" ] && [ "$no_profile_retry" = "1" ] &&
 		procd_append_param command --no-profile-retry
-	procd_append_param command --log-level "$log_level"
+	if [ "$supports_v16" -eq 1 ]; then
+		procd_append_param command --log-level "$log_level"
+	fi
 	[ "$quick_reconnect" = "1" ] && procd_append_param command --quick-reconnect
 	[ "$quick_reconnect" = "0" ] && procd_append_param command --no-quick-reconnect
 	[ "$no_data_check" = "1" ] && procd_append_param command --no-data-check

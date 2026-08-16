@@ -13,11 +13,12 @@
 #   --start          Install and start immediately
 #   --force-config   Overwrite existing /etc/config/aether
 #   --no-curl        Skip curl installation
-#   --version <tag>  Install a specific Aether core release
+#   --version <tag>  Install a specific Aether core release (v1.5.0 or newer)
 #   --non-interactive  Do not prompt; defaults to v1.6.0
 
 # No set -e — we handle errors explicitly with || blocks and error() calls.
 umask 077
+CLIENT_VERSION="v0.4.2"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -98,7 +99,7 @@ DEFAULT_VERSION="v1.6.0"
 
 echo ""
 echo "========================================="
-echo " Aether OpenWrt Client Installer"
+echo " Aether OpenWrt Client $CLIENT_VERSION Installer"
 echo " Arch: $ARCH -> $ARCHIVE"
 echo "========================================="
 echo ""
@@ -125,7 +126,7 @@ supported_core_version() {
     rest="${version#*.}"
     minor="${rest%%.*}"
     [ "$major" -gt 1 ] 2>/dev/null ||
-        { [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 6 ] 2>/dev/null; }
+        { [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 5 ] 2>/dev/null; }
 }
 
 contains_tag() {
@@ -163,7 +164,7 @@ if [ -n "$REQUESTED_VERSION" ]; then
         exit 1
     }
     supported_core_version "$REQUESTED_VERSION" || {
-        error "Unsupported release tag: $REQUESTED_VERSION (v1.6.0 or newer is required)"
+        error "Unsupported release tag: $REQUESTED_VERSION (v1.5.0 or newer is required)"
         exit 1
     }
     TAG_NAME="$REQUESTED_VERSION"
@@ -171,7 +172,7 @@ elif [ "$NON_INTERACTIVE" -eq 1 ] || [ ! -t 0 ]; then
     TAG_NAME="$DEFAULT_VERSION"
 else
     echo ""
-    echo "Available Aether core releases (v1.6.0 or newer):"
+    echo "Available Aether core releases (v1.5.0 or newer):"
     i=1
     echo "$AVAILABLE_TAGS" | while IFS= read -r tag; do
         [ -n "$tag" ] || continue

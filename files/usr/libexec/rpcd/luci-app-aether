@@ -11,6 +11,22 @@
 UCI="/sbin/uci"
 CFG="aether.main"
 
+core_is_v15() {
+	local version major minor rest
+	version=$(/usr/bin/aether --version 2>/dev/null | awk 'NR == 1 {
+		for (i = 1; i <= NF; i++) {
+			v = $i
+			sub(/^v/, "", v)
+			if (v ~ /^[0-9]+\.[0-9]+\.[0-9]+/) { print v; exit }
+		}
+	}')
+	[ -n "$version" ] || return 1
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -lt 6 ] 2>/dev/null
+}
+
 cmd_list() {
 	json_init
 	json_add_array "methods"
@@ -36,6 +52,14 @@ cmd_get() {
 
 cmd_set() {
 	[ -z "$1" ] || [ -z "$2" ] && { echo '{"success":false}'; exit 1; }
+	if core_is_v15; then
+		case "$1" in
+			http_proxy|startup_secs|log_level)
+				echo '{"success":false,"error":"requires Aether core v1.6.0 or newer"}'
+				exit 1
+				;;
+		esac
+	fi
 	# Never quote values in "uci set key=value"
 	$UCI set "aether.main.$1=$2"
 	$UCI commit aether

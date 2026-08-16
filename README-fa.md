@@ -4,6 +4,8 @@
 
 # Aether OpenWrt Client
 
+**نسخه کلاینت: v0.4.2**
+
 اینتگریشن OpenWrt برای [Aether](https://github.com/CluvexStudio/Aether) — یک کلاینت دور زدن سانسور.
 
 **Aether توسط [CluvexStudio](https://github.com/CluvexStudio) توسعه داده می‌شود. این ریپو یک نصب‌کننده OpenWrt و رابط وب LuCI فراهم می‌کند.**
@@ -23,9 +25,9 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 
 در حین نصب از شما پرسیده می‌شود:
 
-- **نسخه هسته Aether**: حداکثر پنج ریلیز پایدار از v1.6.0 به بعد نمایش داده
+- **نسخه هسته Aether**: حداکثر پنج ریلیز پایدار از v1.5.0 به بعد نمایش داده
   می‌شود. با Enter نسخه پیش‌فرض v1.6.0 انتخاب می‌شود؛ می‌توانید یک گزینه یا
-  نسخه معتبر v1.6.0 به بعد را وارد کنید.
+  نسخه معتبر v1.5.0 به بعد را وارد کنید.
 - **curl نصب شود؟** به صورت پیش‌فرض **بله**. curl برای تست اتصال در LuCI و
   watchdog بازیابی تونل لازم است. با `--no-curl` از آن صرف‌نظر کنید؛ تونل کار
   می‌کند اما watchdog فعال نمی‌شود.
@@ -40,7 +42,7 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 
 ## قابلیت‌ها
 
-- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>`
+- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>` و `aether-ctl change-version <vX.Y.Z>`
 - **LuCI**: Services -> Aether
   - جدول وضعیت (وضعیت، نسخه، endpoint، transport، آدرس SOCKS5)
   - دکمه‌های Start / Stop / Restart
@@ -86,6 +88,7 @@ aether-ctl log 100          # نمایش 100 خط آخر
 aether-ctl test google.com  # تست اتصال از طریق تونل (نیاز به curl)
 aether-ctl version
 aether-ctl update
+aether-ctl change-version v1.5.0 --start
 aether-ctl update --version v1.5.0 --start
 ```
 
@@ -94,7 +97,12 @@ aether-ctl update --version v1.5.0 --start
 دستور `aether-ctl update` آخرین `update.sh` این ریپو را دانلود و نصب‌کننده را
 دوباره اجرا می‌کند. کانفیگ `/etc/config/aether` و هویت‌های معتبر `/etc/aether`
 حفظ می‌شوند، مگر این‌که `--force-config` داده شود. فایل هسته همیشه با SHA-256
-ریلیز رسمی بررسی می‌شود.
+ریلیز رسمی بررسی می‌شود. کلاینت از هسته v1.5.0 و جدیدتر پشتیبانی می‌کند و
+پیش‌فرض آن v1.6.0 است. پیش از شروع سرویس و پیش از رندر رابط LuCI، نسخه هسته
+تشخیص داده می‌شود. در v1.5، گزینه‌های مخصوص v1.6 شامل HTTP CONNECT proxy،
+MASQUE startup deadline و کنترل سطح لاگ نمایش داده نشده و به هسته ارسال
+نمی‌شوند. نسخه‌های v1.6 و جدیدتر تا زمانی که پروفایل اختصاصی نداشته باشند،
+رفتار v1.6 را دارند.
 
 ## رابط وب LuCI
 

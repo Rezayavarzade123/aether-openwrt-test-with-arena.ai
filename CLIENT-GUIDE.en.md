@@ -91,6 +91,7 @@ aether-ctl log 100
 aether-ctl test google.com
 aether-ctl set protocol wg
 aether-ctl update
+aether-ctl change-version v1.5.0 --start
 aether-ctl update --version v1.5.0 --start
 ```
 
@@ -116,13 +117,17 @@ chmod +x /tmp/aether-install.sh
 /tmp/aether-install.sh --start
 ```
 
-The installer lists up to five newest stable core releases from v1.6.0 onward
-and defaults to v1.6.0. Older core releases are not offered because they do
-not understand this client's update flow. For automation use
-`--non-interactive`; add `--version vX.Y.Z` to choose a valid published release
-from v1.6.0 onward. `aether-ctl update` fetches the latest
-repository updater and runs the same installer flow. Updates preserve the
-UCI configuration and identities unless `--force-config` is specified.
+The installer lists up to five newest stable core releases from v1.5.0 onward
+and defaults to v1.6.0. For automation use `--non-interactive`; add
+`--version vX.Y.Z` to choose a valid published release from v1.5.0 onward.
+`aether-ctl update` fetches the latest repository updater and runs the same
+installer flow; `aether-ctl change-version vX.Y.Z` is the explicit shortcut for
+switching core versions. Before starting and before LuCI renders its form, the
+client detects the installed core. v1.5 hides and does not pass the v1.6-only
+HTTP CONNECT proxy, MASQUE startup deadline, and core log-level options. v1.6
+and later use the v1.6 capability set until a later version has a dedicated
+profile. Updates preserve the UCI configuration and identities unless
+`--force-config` is specified.
 
 Fresh installs listen on `0.0.0.0:1819` for LAN clients. Because SOCKS5 has no
 authentication, protect the port with firewall rules or change it to
