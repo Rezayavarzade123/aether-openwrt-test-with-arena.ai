@@ -12,6 +12,8 @@
 'require ui';
 'require view';
 
+var AETHER_CLIENT_VERSION = 'v0.4.2';
+
 /* Obfuscation profiles from Aether core guide — depend on protocol. */
 var AETHER_PROFILES = {
 	masque: {
@@ -39,6 +41,15 @@ function aetherProfileLabels(protocol) {
 
 function aetherProfileDefault(protocol) {
 	return (protocol === 'wg' || protocol === 'gool') ? 'balanced' : 'firewall';
+}
+
+/* v1.6 introduced HTTP CONNECT, MASQUE startup deadlines, and log controls.
+ * Later releases inherit this capability profile until one needs its own. */
+function aetherCoreSupportsV16(version) {
+	var m = String(version || '').match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)/);
+	if (!m)
+		return false;
+	return Number(m[1]) > 1 || (Number(m[1]) === 1 && Number(m[2]) >= 6);
 }
 
 function aetherSyncProfileChoices(profileOpt, section_id, protocol) {
@@ -286,6 +297,7 @@ return view.extend({
 		var el = E('div', {});
 
 		return getServiceStatus().then(function(st) {
+			var supportsV16 = aetherCoreSupportsV16(st.version);
 			var tbl = E('table', { 'class': 'table' });
 
 			function row(label, val) {
@@ -300,10 +312,11 @@ return view.extend({
 			row('State', E('span', {
 				'style': 'font-weight:bold;color:' + color
 			}, st.running ? 'Running' : 'Stopped'));
+			row('Client Version', AETHER_CLIENT_VERSION);
+			if (st.version) row('Core Version', st.version);
 			row('Enable on Boot', st.enabled === '1' ? 'Yes' : 'No');
 
 			if (st.running) {
-				if (st.version) row('Version', st.version);
 				if (st.pid) row('PID', String(st.pid));
 				if (st.endpoint) row('Endpoint', E('code', {}, st.endpoint));
 				if (st.transport) row('Transport', 'MASQUE / ' + st.transport);
@@ -568,10 +581,17 @@ return view.extend({
 			o.datatype = 'ipaddrport';
 			o.rmempty = false;
 
-			o = s.option(form.Value, 'http_proxy', 'HTTP CONNECT Proxy',
-				'Optional HTTP CONNECT listener. Leave empty to disable it.');
-			o.datatype = 'or(ipaddrport,string)';
-			o.rmempty = true;
+			if (supportsV16) {
+				o = s.option(form.Value, 'http_proxy', 'HTTP CONNECT Proxy',
+					'Optional HTTP CONNECT listener. Leave empty to disable it.');
+				o.datatype = 'or(ipaddrport,string)';
+				o.rmempty = true;
+			}
+
+			if (!supportsV16) {
+				el.appendChild(E('div', { 'class': 'alert-message warning' },
+					'Aether v1.5 compatibility mode: HTTP CONNECT proxy, MASQUE startup deadline, and core log-level controls require core v1.6.0 or newer.'));
+			}
 
 			s = m.section(form.NamedSection, 'main', 'aether', 'Network');
 
@@ -701,13 +721,15 @@ return view.extend({
 
 			s = m.section(form.NamedSection, 'main', 'aether', 'Advanced');
 
-			o = s.option(form.ListValue, 'log_level', 'Log Level');
-			o.value('error', 'Error');
-			o.value('warn', 'Warning');
-			o.value('info', 'Info');
-			o.value('debug', 'Debug');
-			o.value('trace', 'Trace');
-			o.default = 'info';
+			if (supportsV16) {
+				o = s.option(form.ListValue, 'log_level', 'Log Level');
+				o.value('error', 'Error');
+				o.value('warn', 'Warning');
+				o.value('info', 'Info');
+				o.value('debug', 'Debug');
+				o.value('trace', 'Trace');
+				o.default = 'info';
+			}
 
 			o = s.option(form.Value, 'keepalive', 'Keepalive (s)');
 			o.default = '5';
@@ -719,17 +741,23 @@ return view.extend({
 				'Delay before auto-reconnect after tunnel drops');
 			o.default = '2';
 			o.datatype = 'min(1)';
+			if (!supportsV16)
+				o.depends('protocol', 'masque');
 
 			o = s.option(form.Value, 'validate_secs', 'Validation Timeout (s)',
 				'Seconds to wait for data-plane probe before giving up on a gateway');
 			o.default = '10';
 			o.datatype = 'min(1)';
+			if (!supportsV16)
+				o.depends('protocol', 'masque');
 
-			o = s.option(form.Value, 'startup_secs', 'MASQUE Startup Deadline (s)',
-				'Maximum total time for MASQUE connection and first data validation.');
-			o.default = '30';
-			o.datatype = 'min(1)';
-			o.depends('protocol', 'masque');
+			if (supportsV16) {
+				o = s.option(form.Value, 'startup_secs', 'MASQUE Startup Deadline (s)',
+					'Maximum total time for MASQUE connection and first data validation.');
+				o.default = '30';
+				o.datatype = 'min(1)';
+				o.depends('protocol', 'masque');
+			}
 
 			o = s.option(form.Flag, 'quick_reconnect', 'Quick Reconnect',
 				'Re-verify the last known-good gateway first, then scan if it is unavailable');

@@ -1,3 +1,5 @@
 *.sh text eol=lf
 files/etc/init.d/* text eol=lf
 files/usr/bin/* text eol=lf
+files/usr/libexec/rpcd/* text eol=lf
+files/www/luci-static/resources/view/* text eol=lf

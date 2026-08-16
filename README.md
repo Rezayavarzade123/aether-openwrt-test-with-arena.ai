@@ -4,6 +4,8 @@ Quick guide: [English client guide](CLIENT-GUIDE.en.md) | [راهنمای فار
 
 # Aether OpenWrt Client
 
+**Client release: v0.4.2**
+
 OpenWrt integration for [Aether](https://github.com/CluvexStudio/Aether) — a censorship circumvention client.
 
 **Aether is developed by [CluvexStudio](https://github.com/CluvexStudio). This repo provides an OpenWrt installer and LuCI web interface.**
@@ -23,9 +25,9 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 
 During install you will be asked:
 
-- **Aether core version**: the newest stable releases from v1.6.0 onward are
+- **Aether core version**: the newest stable releases from v1.5.0 onward are
   shown (up to five). Press Enter for the v1.6.0 default, select a listed
-  release, or type a valid v1.6.0-or-newer `vX.Y.Z` version.
+  release, or type a valid v1.5.0-or-newer `vX.Y.Z` version.
 - **Install curl?** Defaults to **Yes**. curl enables LuCI connection tests and end-to-end watchdog recovery. Use `--no-curl` to skip it; the tunnel will work, but the watchdog will not start.
 
 ## What it does
@@ -38,7 +40,7 @@ During install you will be asked:
 
 ## Features
 
-- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>`
+- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>` and `aether-ctl change-version <vX.Y.Z>`
 - **LuCI**: Services -> Aether
   - Status table (state, version, endpoint, transport, SOCKS5 address)
   - Start / Stop / Restart buttons
@@ -82,7 +84,8 @@ aether-ctl log              # show recent logs
 aether-ctl log 100          # show last 100 lines
 aether-ctl test google.com  # test connection through tunnel (needs curl)
 aether-ctl version
-aether-ctl update                       # fetch latest client updater, install v1.6.0
+aether-ctl update                       # fetch latest client updater, keep v1.6.0 default
+aether-ctl change-version v1.5.0 --start
 aether-ctl update --version v1.5.0 --start
 ```
 
@@ -93,12 +96,33 @@ re-runs the installer. Existing `/etc/config/aether` and valid identities in
 `/etc/aether` are preserved unless `--force-config` is supplied. The core
 archive is always verified against the matching upstream SHA-256 file.
 
-v0.4.0 defaults to Aether core **v1.6.0** and only offers v1.6.0 or newer core
-releases, because older cores cannot run this client's update flow. It adds
-HTTP CONNECT proxy,
-MASQUE startup deadline, WireGuard/gool profile retry, existing-token Zero
-Trust, and trace logging controls. Routing rules, ECH, custom DNS, TLS groups,
-performance profiles, and per-protocol identity paths remain core-only options.
+## Core compatibility
+
+Client release **v0.4.2** supports Aether core **v1.5.0 and newer** and defaults
+to **v1.6.0**. The client detects the installed core before starting the
+service and before rendering the LuCI form, then applies the matching
+capability profile:
+
+- **Core v1.5.x:** uses only v1.5-supported arguments. HTTP CONNECT, the MASQUE
+  startup deadline, and core log-level controls are hidden, rejected by the
+  CLI, and never passed to the core.
+- **Core v1.6.x and newer:** uses the v1.6 capability profile. Newer core
+  versions inherit this behavior until a dedicated compatibility profile is
+  needed.
+
+LuCI displays the client version and detected core version separately. To
+switch the installed core without changing the client integration, use:
+
+```sh
+aether-ctl change-version v1.5.0 --start
+aether-ctl change-version v1.6.0 --start
+```
+
+The preserved UCI configuration may contain options unavailable to the
+selected core; those values remain stored for upgrades but are marked inactive
+and are not passed to incompatible cores. Routing rules, ECH, custom DNS, TLS
+groups, performance profiles, and per-protocol identity paths remain core-only
+options.
 
 ## LuCI Web Interface
 
