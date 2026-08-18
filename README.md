@@ -170,6 +170,16 @@ Or just re-run the install script (it always fetches the latest files from GitHu
 wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
 ```
 
+## Using with Passwall 2 (Transparent Proxy)
+
+If you are using **Passwall 2** (or similar transparent proxy plugins) to route your entire network traffic through Aether's SOCKS5 proxy (`127.0.0.1:1819`), **you must disable "Localhost Proxy" (Router Self-Proxy)** in Passwall 2's **Main Switch** settings.
+
+### Why is this necessary?
+- **The Routing Loop Problem:** When Localhost Proxy is enabled, Passwall intercepts *all* network traffic originating from the router itself (via the firewall's `OUTPUT` chain). Since Aether runs locally on the router, Passwall captures Aether's own outbound connection and scanning packets (UDP 443 / UDP 2408 destined for Cloudflare edge servers) and loops them back into Passwall $\rightarrow$ Aether SOCKS5. Because Aether cannot send handshake packets directly to the internet, it gets trapped in a loop and fails to connect.
+- **What happens when you disable Localhost Proxy?**
+  1. **Aether Core connects directly:** Outbound traffic from local router processes bypasses Passwall and goes straight through your WAN interface, allowing Aether to discover endpoints and establish the tunnel with Cloudflare without interference.
+  2. **LAN clients remain fully proxied:** All traffic from your connected LAN devices (phones, PCs, smart TVs) is still intercepted by Passwall (via the `PREROUTING` chain) and routed transparently through Aether's SOCKS5 tunnel.
+
 ## Notes
 
 - Requires OpenWrt 24.10+ with musl libc (apk on 25.12+, opkg on older)
@@ -185,3 +195,4 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 ## License
 
 MIT — this installer and LuCI app only. Aether itself is AGPL-3.0.
+
