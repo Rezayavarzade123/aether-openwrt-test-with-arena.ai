@@ -4,7 +4,7 @@ Quick guide: [English client guide](CLIENT-GUIDE.en.md) | [راهنمای فار
 
 # Aether OpenWrt Client
 
-**Client release: v0.4.2**
+**Client release: v0.5.1**
 
 OpenWrt integration for [Aether](https://github.com/CluvexStudio/Aether) — a censorship circumvention client.
 
@@ -26,7 +26,7 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 During install you will be asked:
 
 - **Aether core version**: the newest stable releases from v1.5.0 onward are
-  shown (up to five). Press Enter for the v1.6.0 default, select a listed
+  shown (up to five). Press Enter for the v1.7.0 default, select a listed
   release, or type a valid v1.5.0-or-newer `vX.Y.Z` version.
 - **Install curl?** Defaults to **Yes**. curl enables LuCI connection tests and end-to-end watchdog recovery. Use `--no-curl` to skip it; the tunnel will work, but the watchdog will not start.
 
@@ -40,14 +40,16 @@ During install you will be asked:
 
 ## Features
 
-- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>` and `aether-ctl change-version <vX.Y.Z>`
+- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip`, `aether-ctl change-version <vX.Y.Z>`, and `aether-ctl passwall <status|localhost <on|off>|add-node>`
 - **LuCI**: Services -> Aether
   - Status table (state, version, endpoint, transport, SOCKS5 address)
   - Start / Stop / Restart buttons
-  - Connection test buttons with accurate millisecond timing
+  - Connection test buttons with accurate millisecond timing and Public IP geolocation check
   - Real-time live logs (auto-updating, pause/resume, auto-scroll)
+  - Passwall2 integration: warning when Passwall2 proxies router-local traffic (`localhost_proxy=1`), one-click disable, and one-click creation of a Passwall2 socks node pointing at Aether
   - Full configuration (protocol, scan mode, obfuscation, HTTP/2, etc.)
 - **Recovery watchdog**: verifies traffic through SOCKS5 and restarts only a stuck core process after repeated failures
+- **Upstream proxy chaining** (core v1.7+): dial out through another SOCKS5/HTTP proxy before reaching Cloudflare (passed via `--upstream`)
 - **Zero Trust**: headless organization enrollment with a Cloudflare Access service token
 - **Service**: procd integration, auto-start on boot
 - **Architecture**: x86_64, arm64, armv7 (musl static builds)
@@ -60,7 +62,7 @@ During install you will be asked:
 /tmp/aether-install.sh --force-config  # overwrite existing config
 /tmp/aether-install.sh --no-curl       # skip curl installation prompt
 /tmp/aether-install.sh --version v1.5.0 --start
-/tmp/aether-install.sh --non-interactive --start  # use v1.6.0, no prompts
+/tmp/aether-install.sh --non-interactive --start  # use v1.7.0, no prompts
 ```
 
 ## Uninstall
@@ -83,10 +85,15 @@ aether-ctl show
 aether-ctl log              # show recent logs
 aether-ctl log 100          # show last 100 lines
 aether-ctl test google.com  # test connection through tunnel (needs curl)
+aether-ctl check-ip         # check public IP, country, and latency (ipwho.is)
+aether-ctl passwall status            # show Passwall2 state and matching nodes
+aether-ctl passwall localhost off     # stop Passwall2 proxying router-local traffic
+aether-ctl passwall add-node          # create a socks node -> Aether (e.g. 127.0.0.1:1819)
 aether-ctl version
-aether-ctl update                       # fetch latest client updater, keep v1.6.0 default
+aether-ctl update                       # fetch latest client updater, keep v1.7.0 default
 aether-ctl change-version v1.5.0 --start
 aether-ctl update --version v1.5.0 --start
+aether-ctl set upstream_proxy socks5://192.168.1.9:1082  # chain via another proxy (v1.7+)
 ```
 
 ## Updates
@@ -98,17 +105,19 @@ archive is always verified against the matching upstream SHA-256 file.
 
 ## Core compatibility
 
-Client release **v0.4.2** supports Aether core **v1.5.0 and newer** and defaults
-to **v1.6.0**. The client detects the installed core before starting the
+Client release **v0.5.1** supports Aether core **v1.5.0 and newer** and defaults
+to **v1.7.0**. The client detects the installed core before starting the
 service and before rendering the LuCI form, then applies the matching
 capability profile:
 
 - **Core v1.5.x:** uses only v1.5-supported arguments. HTTP CONNECT, the MASQUE
   startup deadline, and core log-level controls are hidden, rejected by the
   CLI, and never passed to the core.
-- **Core v1.6.x and newer:** uses the v1.6 capability profile. Newer core
-  versions inherit this behavior until a dedicated compatibility profile is
-  needed.
+- **Core v1.6.x:** uses the v1.6 capability profile (HTTP CONNECT proxy,
+  MASQUE startup deadline, log levels).
+- **Core v1.7.x and newer:** adds upstream proxy chaining
+  (`upstream_proxy` UCI option). Newer core versions inherit this behavior
+  until a dedicated compatibility profile is needed.
 
 LuCI displays the client version and detected core version separately. To
 switch the installed core without changing the client integration, use:
@@ -116,6 +125,7 @@ switch the installed core without changing the client integration, use:
 ```sh
 aether-ctl change-version v1.5.0 --start
 aether-ctl change-version v1.6.0 --start
+aether-ctl change-version v1.7.0 --start
 ```
 
 The preserved UCI configuration may contain options unavailable to the
@@ -138,6 +148,7 @@ Features:
 - Pause/Resume log streaming
 - Auto-scroll toggle
 - Clear logs button
+- Passwall2 Integration (below Advanced settings): warning when Passwall2 proxies router-local traffic, one-click disable, one-click creation of a socks node pointing at Aether
 - Full configuration (protocol, scan mode, obfuscation, HTTP/2, etc.)
 
 After an update, if the new LuCI page or fields do not appear, use `Ctrl+F5`,
@@ -179,6 +190,24 @@ If you are using **Passwall 2** (or similar transparent proxy plugins) to route 
 - **What happens when you disable Localhost Proxy?**
   1. **Aether Core connects directly:** Outbound traffic from local router processes bypasses Passwall and goes straight through your WAN interface, allowing Aether to discover endpoints and establish the tunnel with Cloudflare without interference.
   2. **LAN clients remain fully proxied:** All traffic from your connected LAN devices (phones, PCs, smart TVs) is still intercepted by Passwall (via the `PREROUTING` chain) and routed transparently through Aether's SOCKS5 tunnel.
+
+### Built-in integration (v0.5.1)
+
+The client automates this setup so the manual steps above are usually not
+needed:
+
+- The **Passwall2 Integration** section in LuCI (below *Advanced settings*)
+  shows the current state, warns when Localhost Proxy is enabled, and offers a
+  one-click disable plus one-click creation of a Passwall2 socks node pointing
+  at Aether.
+- On the CLI, `aether-ctl passwall status` reports the state,
+  `aether-ctl passwall localhost off|on` toggles Localhost Proxy, and
+  `aether-ctl passwall add-node` creates a single canonical node named
+  `aether_node` targeting Aether's current listen address.
+- If an existing Aether-related node points at a different address/port, no
+  duplicate is created; both CLI and LuCI print manual repair instructions
+  instead (edit that node in Services -> Passwall2 -> Nodes, or delete it and
+  create it again).
 
 ## Notes
 

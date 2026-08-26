@@ -27,6 +27,23 @@ core_is_v15() {
 	[ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -lt 6 ] 2>/dev/null
 }
 
+core_is_below_v17() {
+	local version major minor rest
+	version=$(/usr/bin/aether --version 2>/dev/null | awk 'NR == 1 {
+		for (i = 1; i <= NF; i++) {
+			v = $i
+			sub(/^v/, "", v)
+			if (v ~ /^[0-9]+\.[0-9]+\.[0-9]+/) { print v; exit }
+		}
+	}')
+	[ -n "$version" ] || return 1
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -lt 1 ] 2>/dev/null && return 0
+	[ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -lt 7 ] 2>/dev/null
+}
+
 cmd_list() {
 	json_init
 	json_add_array "methods"
@@ -40,7 +57,8 @@ cmd_list() {
 cmd_get() {
 	local cfg="aether.${1:-main}"
 	json_init
-	for key in enabled protocol socks_listen http_proxy scan_mode ip_version \
+	for key in enabled protocol socks_listen http_proxy upstream_proxy \
+		scan_mode ip_version \
 		obfuscation_profile http2_mode fragment_tls fragment_size \
 		fragment_delay peer keepalive reconnect_secs validate_secs \
 		startup_secs quick_reconnect no_data_check no_profile_retry config_path log_level; do
@@ -56,6 +74,14 @@ cmd_set() {
 		case "$1" in
 			http_proxy|startup_secs|log_level)
 				echo '{"success":false,"error":"requires Aether core v1.6.0 or newer"}'
+				exit 1
+				;;
+		esac
+	fi
+	if core_is_below_v17; then
+		case "$1" in
+			upstream_proxy)
+				echo '{"success":false,"error":"requires Aether core v1.7.0 or newer"}'
 				exit 1
 				;;
 		esac

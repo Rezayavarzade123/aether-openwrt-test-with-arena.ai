@@ -4,7 +4,7 @@
 
 # Aether OpenWrt Client
 
-**نسخه کلاینت: v0.4.2**
+**نسخه کلاینت: v0.5.1**
 
 اینتگریشن OpenWrt برای [Aether](https://github.com/CluvexStudio/Aether) — یک کلاینت دور زدن سانسور.
 
@@ -26,7 +26,7 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 در حین نصب از شما پرسیده می‌شود:
 
 - **نسخه هسته Aether**: حداکثر پنج ریلیز پایدار از v1.5.0 به بعد نمایش داده
-  می‌شود. با Enter نسخه پیش‌فرض v1.6.0 انتخاب می‌شود؛ می‌توانید یک گزینه یا
+  می‌شود. با Enter نسخه پیش‌فرض v1.7.0 انتخاب می‌شود؛ می‌توانید یک گزینه یا
   نسخه معتبر v1.5.0 به بعد را وارد کنید.
 - **curl نصب شود؟** به صورت پیش‌فرض **بله**. curl برای تست اتصال در LuCI و
   watchdog بازیابی تونل لازم است. با `--no-curl` از آن صرف‌نظر کنید؛ تونل کار
@@ -42,16 +42,19 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 
 ## قابلیت‌ها
 
-- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>` و `aether-ctl change-version <vX.Y.Z>`
+- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip`، `aether-ctl change-version <vX.Y.Z>` و `aether-ctl passwall <status|localhost <on|off>|add-node>`
 - **LuCI**: Services -> Aether
   - جدول وضعیت (وضعیت، نسخه، endpoint، transport، آدرس SOCKS5)
   - دکمه‌های Start / Stop / Restart
-  - دکمه‌های تست اتصال با زمان‌بندی دقیق میلی‌ثانیه
+  - دکمه‌های تست اتصال با زمان‌بندی دقیق میلی‌ثانیه و بررسی IP عمومی و کشور
   - لاگ‌های زنده بلادرنگ (به‌روزرسانی خودکار، توقف/ادامه، اسکرول خودکار)
+  - یکپارچگی Passwall2 (زیر بخش Advanced): هشدار در صورت پروکسی شدن ترافیک خود روتر توسط Passwall2، غیرفعال‌سازی با یک کلیک و ساخت با یک کلیک نود socks اشاره‌کننده به Aether
   - پیکربندی کامل (پروتکل، حالت اسکن، obfuscation، HTTP/2 و غیره)
 - **سرویس**: ادغام procd، شروع خودکار هنگام بوت
 - **watchdog بازیابی**: مسیر واقعی SOCKS5 را بررسی می‌کند و در صورت گیر کردن
   هسته، پس از چند خطای متوالی آن را بازیابی می‌کند
+- **زنجیره پروکسی بالادستی** (هسته v1.7+): خروج از طریق یک پروکسی دیگر
+  SOCKS5/HTTP پیش از رسیدن به Cloudflare (از طریق پرچم `--upstream`)
 - **Zero Trust**: اتصال headless به سازمان با Access service token
 - **معماری**: x86_64، arm64، armv7 (باینری‌های استاتیک musl)
 
@@ -63,7 +66,7 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 /tmp/aether-install.sh --force-config  # بازنویسی کانفیگ موجود
 /tmp/aether-install.sh --no-curl       # رد شدن از پرامپت نصب curl
 /tmp/aether-install.sh --version v1.5.0 --start
-/tmp/aether-install.sh --non-interactive --start  # نسخه v1.6.0 بدون پرامپت
+/tmp/aether-install.sh --non-interactive --start  # نسخه v1.7.0 بدون پرامپت
 ```
 
 ## حذف نصب
@@ -86,6 +89,10 @@ aether-ctl show
 aether-ctl log              # نمایش لاگ‌های اخیر
 aether-ctl log 100          # نمایش 100 خط آخر
 aether-ctl test google.com  # تست اتصال از طریق تونل (نیاز به curl)
+aether-ctl check-ip         # بررسی IP عمومی، کشور و پینگ (ipwho.is)
+aether-ctl passwall status            # نمایش وضعیت Passwall2 و نودهای مرتبط
+aether-ctl passwall localhost off     # توقف پروکسی ترافیک خود روتر توسط Passwall2
+aether-ctl passwall add-node          # ساخت نود socks اشاره‌کننده به Aether
 aether-ctl version
 aether-ctl update
 aether-ctl change-version v1.5.0 --start
@@ -98,11 +105,12 @@ aether-ctl update --version v1.5.0 --start
 دوباره اجرا می‌کند. کانفیگ `/etc/config/aether` و هویت‌های معتبر `/etc/aether`
 حفظ می‌شوند، مگر این‌که `--force-config` داده شود. فایل هسته همیشه با SHA-256
 ریلیز رسمی بررسی می‌شود. کلاینت از هسته v1.5.0 و جدیدتر پشتیبانی می‌کند و
-پیش‌فرض آن v1.6.0 است. پیش از شروع سرویس و پیش از رندر رابط LuCI، نسخه هسته
+پیش‌فرض آن v1.7.0 است. پیش از شروع سرویس و پیش از رندر رابط LuCI، نسخه هسته
 تشخیص داده می‌شود. در v1.5، گزینه‌های مخصوص v1.6 شامل HTTP CONNECT proxy،
 MASQUE startup deadline و کنترل سطح لاگ نمایش داده نشده و به هسته ارسال
-نمی‌شوند. نسخه‌های v1.6 و جدیدتر تا زمانی که پروفایل اختصاصی نداشته باشند،
-رفتار v1.6 را دارند.
+نمی‌شوند. نسخه‌های v1.6 پروفایل قابلیت v1.6 را دارند و نسخه‌های v1.7 و
+جدیدتر علاوه بر آن، زنجیره پروکسی بالادستی (گزینه UCI `upstream_proxy`) را
+هم پشتیبانی می‌کنند.
 
 ## رابط وب LuCI
 
@@ -118,6 +126,7 @@ MASQUE startup deadline و کنترل سطح لاگ نمایش داده نشده
 - توقف/ادامه استریم لاگ
 - تاگل اسکرول خودکار
 - دکمه پاک کردن لاگ‌ها
+- بخش Passwall2 Integration (زیر تنظیمات Advanced) برای اتصال شفاف کل شبکه از طریق تونل Aether
 - پیکربندی کامل (پروتکل، حالت اسکن، obfuscation، HTTP/2 و غیره)
 
 اگر بعد از به‌روزرسانی صفحه جدید LuCI یا فیلدهای جدید را نمی‌بینید، با
@@ -160,6 +169,14 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 - **وقتی Localhost Proxy را غیرفعال می‌کنیم چه اتفاقی می‌افتد؟**
   1. **هسته Aether مستقیم وصل می‌شود:** ترافیک برنامه‌های داخلی روتر (شامل هسته Aether) از شنود Passwall عبور نکرده و مستقیماً از طریق رابط اینترنت WAN ارسال می‌شوند؛ در نتیجه Aether بدون اختلال آی‌پی‌ها را اسکن کرده و تونل را با کلودفلر برقرار می‌کند.
   2. **تمام دستگاه‌های متصل به شبکه (LAN) به صورت کامل پروکسی می‌شوند:** ترافیک کلاینت‌های متصل به شبکه محلی (موبایل‌ها، کامپیوترها، تلویزیون‌ها و...) همچنان از طریق زنجیره `PREROUTING` توسط Passwall دریافت شده و به صورت شفاف و کامل از داخل تونل امن Aether عبور داده می‌شود.
+
+### یکپارچگی داخلی (v0.5.1)
+
+کلاینت این تنظیمات را خودکار می‌کند و معمولاً نیازی به مراحل دستی بالا نیست:
+
+- بخش **Passwall2 Integration** در LuCI (زیر *تنظیمات Advanced*) وضعیت فعلی را نشان می‌دهد، در صورت فعال بودن Localhost Proxy هشدار می‌دهد و دکمه غیرفعال‌سازی با یک کلیک به همراه دکمه ساخت نود socks اشاره‌کننده به Aether دارد.
+- در خط فرمان، `aether-ctl passwall status` وضعیت را گزارش می‌کند، `aether-ctl passwall localhost off|on` پروکسی لوکال‌هاست را تغییر می‌دهد و `aether-ctl passwall add-node` تنها یک نود رسمی به نام `aether_node` رو به آدرس فعلی Aether می‌سازد.
+- اگر از قبل نودی متعلق به Aether به آدرس/پورت دیگری اشاره کند، هیچ ورود تکراری ساخته نمی‌شود؛ در CLI و LuCI دستورالعمل اصلاح دستی نمایش داده می‌شود (ویرایش همان نود در Services -> Passwall2 -> Nodes یا حذف آن و ساخت دوباره).
 
 ## نکات
 

@@ -12,7 +12,7 @@
 'require ui';
 'require view';
 
-var AETHER_CLIENT_VERSION = 'v0.4.2';
+var AETHER_CLIENT_VERSION = 'v0.5.1';
 
 /* Obfuscation profiles from Aether core guide — depend on protocol. */
 var AETHER_PROFILES = {
@@ -50,6 +50,14 @@ function aetherCoreSupportsV16(version) {
 	if (!m)
 		return false;
 	return Number(m[1]) > 1 || (Number(m[1]) === 1 && Number(m[2]) >= 6);
+}
+
+/* v1.7 added upstream proxy chaining (--upstream). */
+function aetherCoreSupportsV17(version) {
+	var m = String(version || '').match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)/);
+	if (!m)
+		return false;
+	return Number(m[1]) > 1 || (Number(m[1]) === 1 && Number(m[2]) >= 7);
 }
 
 function aetherSyncProfileChoices(profileOpt, section_id, protocol) {
@@ -286,6 +294,93 @@ function doTestConnection(host) {
 		});
 	};
 }
+function doCheckIp() {
+	return function() {
+		var btn = this;
+		var resultEl = document.getElementById('test-result-ip');
+		btn.disabled = true;
+		btn.value = 'Checking...';
+		if (resultEl) {
+			resultEl.textContent = 'Connecting...';
+			resultEl.style.color = '#888';
+		}
+
+		callFileExec('/usr/bin/aether-ctl', [ 'check-ip' ]
+		).then(function(r) {
+			var output = (r && r.stdout) ? r.stdout : '';
+			var errput = (r && r.stderr) ? r.stderr : '';
+			var combined = output + ' ' + errput;
+			// Matches "IP: <ip> (<country>) <ms>ms" or "IP: <ip> <ms>ms"
+			var ipCountryMatch = combined.match(/IP:\s*([^\s(]+)\s*\(([^)]+)\)\s+(\d+)ms/i);
+			var ipMatch = combined.match(/IP:\s*([^\s(]+)\s+(\d+)ms/i);
+			var failMatch = combined.match(/FAILED\s+(\d+)ms/i);
+
+			if (ipCountryMatch) {
+				if (resultEl) {
+					resultEl.textContent = ipCountryMatch[1] + ' (' + ipCountryMatch[2] + ') \u2014 ' + ipCountryMatch[3] + 'ms';
+					resultEl.style.color = '#2ecc71';
+				}
+			} else if (ipMatch) {
+				if (resultEl) {
+					resultEl.textContent = ipMatch[1] + ' \u2014 ' + ipMatch[2] + 'ms';
+					resultEl.style.color = '#2ecc71';
+				}
+			} else if (failMatch) {
+				if (resultEl) {
+					resultEl.textContent = 'Failed \u2014 ' + failMatch[1] + 'ms';
+					resultEl.style.color = '#e74c3c';
+				}
+			} else {
+				if (resultEl) {
+					resultEl.textContent = 'Failed';
+					resultEl.style.color = '#e74c3c';
+				}
+			}
+		}).catch(function() {
+			if (resultEl) {
+				resultEl.textContent = 'Error';
+				resultEl.style.color = '#e74c3c';
+			}
+		}).finally(function() {
+			btn.disabled = false;
+			btn.value = 'Check Public IP';
+		});
+	};
+}
+
+/* Parse "key=value" lines emitted by `aether-ctl passwall status`. */
+function parseKeyValues(text) {
+	var out = {};
+	String(text || '').split('\n').forEach(function(line) {
+		var m = line.match(/^\s*([a-z0-9_]+)=(.*)$/i);
+		if (m)
+			out[m[1]] = m[2].trim();
+	});
+	return out;
+}
+
+function pwRunCtl(args, btn, busyLabel) {
+	var original = btn.value;
+	btn.disabled = true;
+	btn.value = busyLabel || 'Working...';
+	return callFileExec('/usr/bin/aether-ctl', args).then(function(r) {
+		if (!r || r.code !== 0) {
+			var err = (r && r.stderr) ? String(r.stderr).trim().split('\n')[0] : 'Failed';
+			btn.value = err;
+			return false;
+		}
+		btn.value = 'Done';
+		return true;
+	}).catch(function() {
+		btn.value = 'Error';
+		return false;
+	}).finally(function() {
+		setTimeout(function() {
+			btn.disabled = false;
+			btn.value = original;
+		}, 2000);
+	});
+}
 
 
 return view.extend({
@@ -298,6 +393,7 @@ return view.extend({
 
 		return getServiceStatus().then(function(st) {
 			var supportsV16 = aetherCoreSupportsV16(st.version);
+			var supportsV17 = aetherCoreSupportsV17(st.version);
 			var tbl = E('table', { 'class': 'table' });
 
 			function row(label, val) {
@@ -401,10 +497,28 @@ return view.extend({
 				wrapper.appendChild(result);
 				testRow.appendChild(wrapper);
 			});
+			var ipWrapper = E('div', {
+				'style': 'display:flex;align-items:center;gap:6px'
+			});
+
+			var ipBtn = E('input', {
+				'type': 'button',
+				'class': 'cbi-button cbi-button-apply',
+				'value': 'Check Public IP',
+				'click': doCheckIp()
+			});
+
+			var ipResult = E('span', {
+				'id': 'test-result-ip',
+				'style': 'font-size:13px;color:#888;min-width:140px'
+			}, '');
+
+			ipWrapper.appendChild(ipBtn);
+			ipWrapper.appendChild(ipResult);
+			testRow.appendChild(ipWrapper);
 
 			testSection.appendChild(testRow);
 			el.appendChild(testSection);
-
 			// --- Live Logs Section ---
 			var logSection = E('div', { 'class': 'cbi-section' }, [
 				E('h3', { 'style': 'margin-top:0' }, 'Live Logs'),
@@ -588,9 +702,22 @@ return view.extend({
 				o.rmempty = true;
 			}
 
+			if (supportsV17) {
+				o = s.option(form.Value, 'upstream_proxy', 'Upstream Proxy',
+					'Dial out through another proxy before reaching Cloudflare ' +
+					'(requires core v1.7+). Accepts socks5://[user:pass@]host:port, ' +
+					'http://host:port or bare host:port. A SOCKS5 upstream carries all ' +
+					'transports; an HTTP CONNECT upstream requires HTTP/2 mode.');
+				o.rmempty = true;
+				o.password = true;
+			}
+
 			if (!supportsV16) {
 				el.appendChild(E('div', { 'class': 'alert-message warning' },
 					'Aether v1.5 compatibility mode: HTTP CONNECT proxy, MASQUE startup deadline, and core log-level controls require core v1.6.0 or newer.'));
+			} else if (!supportsV17) {
+				el.appendChild(E('div', { 'class': 'alert-message warning' },
+					'Aether v1.6 compatibility mode: upstream proxy chaining requires core v1.7.0 or newer.'));
 			}
 
 			s = m.section(form.NamedSection, 'main', 'aether', 'Network');
@@ -802,6 +929,124 @@ return view.extend({
 				}
 				aetherSyncProfileChoices(profileOpt, 'main', proto);
 				aetherSyncMasqueOptions(masqueOptionOpts, 'main', proto);
+				// --- Passwall2 Integration (rendered under Advanced settings) ---
+				var pwSection = E('div', { 'class': 'cbi-section' });
+
+				function pwRow(tbl, label, val) {
+					tbl.appendChild(E('tr', { 'class': 'tr' }, [
+						E('td', { 'class': 'td', 'style': 'width:160px;font-weight:600' }, label),
+						E('td', { 'class': 'td' }, val)
+					]));
+				}
+
+				function refreshPasswall() {
+					while (pwSection.firstChild)
+						pwSection.removeChild(pwSection.firstChild);
+
+					pwSection.appendChild(E('h3', { 'style': 'margin-top:0' }, 'Passwall2 Integration'));
+
+					callFileExec('/usr/bin/aether-ctl', [ 'passwall', 'status' ]).then(function(r) {
+						var st = parseKeyValues(r && r.stdout);
+
+						if (String(st.passwall2_present) !== '1') {
+							pwSection.appendChild(E('p', {
+								'style': 'margin:4px 0 10px 0;color:#666;font-size:13px'
+							}, 'Passwall2 was not detected on this router. Install luci-app-passwall2 to use this integration.'));
+							return;
+						}
+
+						if (st.localhost_proxy === '1') {
+							pwSection.appendChild(E('div', { 'class': 'alert-message warning' },
+								'Passwall2 is proxying router-local traffic (localhost_proxy=1). This competes with Aether for local connections and can route Aether\'s own probes through Passwall2. Disable it unless you deliberately chain the two proxies.'));
+						}
+
+						var tbl = E('table', { 'class': 'table' });
+						pwRow(tbl, 'Global Enabled', st.passwall2_enabled === '1' ? 'Yes' : 'No');
+						pwRow(tbl, 'Localhost Proxy', st.localhost_proxy === '1' ? 'Enabled' : 'Disabled');
+						pwRow(tbl, 'Client Proxy', st.client_proxy === '1' ? 'Enabled' : 'Disabled');
+						pwRow(tbl, 'Aether SOCKS5', E('code', {}, st.aether_socks_addr || '?'));
+
+						var found = parseInt(st.node_found, 10) || 0;
+						var conflicts = parseInt(st.conflict_count, 10) || 0;
+						if (found > 0) {
+							pwRow(tbl, 'Aether Node', E('code', {}, String(st.matched_nodes || '').trim()));
+						} else if (conflicts > 0) {
+							pwRow(tbl, 'Aether Node', E('span', {
+								'style': 'color:#e67e22'
+							}, 'Points elsewhere:' + (st.conflict_nodes || '')));
+						} else {
+							pwRow(tbl, 'Aether Node', E('span', { 'style': 'color:#888' }, 'Not configured'));
+						}
+						pwSection.appendChild(tbl);
+
+						if (found === 0 && conflicts > 0) {
+							/* Never offer to create a second node — instruct instead. */
+							var firstName = String(st.conflict_names || '').trim().split(/\s+/)[0] || '';
+							pwSection.appendChild(E('div', { 'class': 'alert-message warning' }, [
+								'A Passwall2 node for Aether already exists but points at a different address/port.',
+								E('br'),
+								'Fix it manually (pick one):',
+								E('br'),
+								'1. Services \u2192 Passwall2 \u2192 Nodes \u2192 edit "' + firstName + '": set Address/Port to ',
+								E('strong', {}, st.aether_socks_addr || '?'),
+								', then Save & Apply.',
+								E('br'),
+								'2. Delete that node, apply, and reload this page \u2014 the Create button will appear.'
+							]));
+							return;
+						}
+
+						var btnRow = E('div', {
+							'style': 'margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap'
+						});
+
+						if (st.localhost_proxy === '1') {
+							var offBtn = E('input', {
+								'type': 'button',
+								'class': 'cbi-button cbi-button-remove',
+								'value': 'Disable Localhost Proxy',
+								'click': function() {
+									var btn = this;
+									pwRunCtl([ 'passwall', 'localhost', 'off' ], btn, 'Disabling...').then(function(ok) {
+										if (ok) setTimeout(refreshPasswall, 1200);
+									});
+								}
+							});
+							btnRow.appendChild(offBtn);
+							btnRow.appendChild(E('span', {
+								'style': 'font-size:12px;color:#888'
+							}, 'Sets localhost_proxy=0 in /etc/config/passwall2 and restarts Passwall2 if it is enabled.'));
+						}
+
+						if (found === 0 && conflicts === 0) {
+							var addBtn = E('input', {
+								'type': 'button',
+								'class': 'cbi-button cbi-button-apply',
+								'value': 'Create Aether Node',
+								'click': function() {
+									var btn = this;
+									pwRunCtl([ 'passwall', 'add-node' ], btn, 'Creating...').then(function(ok) {
+										if (ok) setTimeout(refreshPasswall, 1200);
+									});
+								}
+							});
+							btnRow.appendChild(addBtn);
+							btnRow.appendChild(E('span', {
+								'style': 'font-size:12px;color:#888'
+							}, 'Adds a Passwall2 socks node named "aether_node" pointing at Aether (' + (st.aether_socks_addr || '127.0.0.1:1819') + ').'));
+						}
+
+						if (btnRow.firstChild)
+							pwSection.appendChild(btnRow);
+					}).catch(function() {
+						pwSection.appendChild(E('p', {
+							'style': 'margin:4px 0;color:#666;font-size:13px'
+						}, 'Could not query Passwall2 status (aether-ctl passwall status failed).'));
+					});
+				}
+
+				el.appendChild(pwSection);
+				refreshPasswall();
 				return el;
 			});
 		});

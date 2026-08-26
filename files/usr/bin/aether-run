@@ -1,5 +1,5 @@
 #!/bin/sh
-# Root-only launcher that keeps Zero Trust credentials out of procd/ubus output.
+# Root-only launcher that keeps secrets out of procd/ubus/ps output.
 
 UCI=/sbin/uci
 
