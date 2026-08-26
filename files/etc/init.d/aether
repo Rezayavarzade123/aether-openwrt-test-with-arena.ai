@@ -35,8 +35,9 @@ identity_sibling() {
 }
 
 # v1.6 introduced HTTP CONNECT, the MASQUE startup deadline, and core log
-# controls. Newer core versions inherit the v1.6 capability set until a later
-# version receives an explicit compatibility profile here.
+# controls. v1.7 added upstream proxy chaining (--upstream).
+# Newer core versions inherit the latest capability set until a later version
+# receives an explicit compatibility profile here.
 core_version() {
 	"$PROG" --version 2>/dev/null | awk 'NR == 1 {
 		for (i = 1; i <= NF; i++) {
@@ -59,6 +60,15 @@ core_supports_v16() {
 		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 6 ] 2>/dev/null; }
 }
 
+core_supports_v17() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 1 ] 2>/dev/null ||
+		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 7 ] 2>/dev/null; }
+}
+
 start_service() {
 	config_load aether
 
@@ -68,13 +78,19 @@ start_service() {
 	local keepalive reconnect_secs validate_secs startup_secs quick_reconnect
 	local no_data_check config_path log_level
 	local no_profile_retry team access_id access_secret access_token
-	local installed_version supports_v16
+	local upstream_proxy
+	local installed_version supports_v16 supports_v17
 
 	installed_version="$(core_version)"
 	if [ -z "$installed_version" ]; then
 		logger -t aether "ERROR: could not determine installed Aether core version"
 		echo "aether: cannot determine /usr/bin/aether version" >&2
 		return 1
+	fi
+	if core_supports_v17 "$installed_version"; then
+		supports_v17=1
+	else
+		supports_v17=0
 	fi
 	if core_supports_v16 "$installed_version"; then
 		supports_v16=1
@@ -85,6 +101,7 @@ start_service() {
 	config_get protocol main protocol 'masque'
 	config_get socks_listen main socks_listen '0.0.0.0:1819'
 	config_get http_proxy main http_proxy ''
+	config_get upstream_proxy main upstream_proxy ''
 	config_get scan_mode main scan_mode 'balanced'
 	config_get ip_version main ip_version 'ipv4'
 	config_get obfuscation_profile main obfuscation_profile 'firewall'
@@ -142,6 +159,11 @@ start_service() {
 		procd_append_param command --http-proxy "$http_proxy"
 	elif [ -n "$http_proxy" ]; then
 		logger -t aether "Ignoring HTTP CONNECT proxy: Aether v$installed_version requires v1.6.0 or newer"
+	fi
+	if [ -n "$upstream_proxy" ] && [ "$supports_v17" -eq 1 ]; then
+		procd_append_param command --upstream "$upstream_proxy"
+	elif [ -n "$upstream_proxy" ]; then
+		logger -t aether "Ignoring upstream proxy: Aether v$installed_version requires v1.7.0 or newer"
 	fi
 	procd_append_param command --config "$config_path"
 	case "$protocol" in

@@ -45,6 +45,12 @@ Aether یک پراکسی محلی SOCKS5 ایجاد می‌کند و ترافی�
 - **TLS Fragmentation** برای MASQUE روی HTTP/2 و در صورت مسدود بودن handshake است.
 - **HTTP CONNECT Proxy** به‌صورت اختیاری همان تونل را برای برنامه‌های بدون SOCKS5
   فراهم می‌کند.
+- **Upstream Proxy** (نیازمند هسته v1.7+) تونل را پشت یک پروکسی دیگر زنجیر
+  می‌کند. مقدار آن می‌تواند `socks5://[user:pass@]host:port`، `http://host:port`
+  یا فقط `host:port` (SOCKS5 در نظر گرفته می‌شود) باشد. پروکسی SOCKS5 بالادستی
+  همه transportها را پشتیبانی می‌کند؛ پروکسی HTTP CONNECT به حالت HTTP/2 نیاز
+  دارد. این مقدار مستقیماً از طریق پرچم `--upstream` به هسته داده می‌شود و در
+  `aether-ctl show` مخفی (redact) نمایش داده می‌شود.
 - **MASQUE Startup Deadline** برای اتصال و اولین اعتبارسنجی داده محدودیت زمانی
   می‌گذارد و مقدار پیش‌فرض آن ۳۰ ثانیه است.
 
@@ -75,6 +81,36 @@ Secret در `/etc/config/aether` ذخیره می‌شود، فایل فقط بر
 ورود تعاملی با کد ایمیل را از ترمینال و با خود هسته Aether انجام دهید؛ سرویس boot
 برای ورود تعاملی مناسب نیست.
 
+## یکپارچگی Passwall2
+
+اگر از Passwall 2 برای پروکسی شفاف کلاینت‌های LAN از داخل تونل Aether استفاده
+می‌کنید، کلاینت می‌تواند تنظیمات لازم را مدیریت کند. از بخش **Passwall2
+Integration** در صفحه LuCI (زیر *تنظیمات Advanced*) یا خط فرمان استفاده کنید:
+
+```sh
+aether-ctl passwall status            # وضعیت، localhost_proxy و نودهای مرتبط
+aether-ctl passwall localhost off     # توقف پروکسی ترافیک خود روتر توسط Passwall2
+aether-ctl passwall localhost on      # فعال‌سازی مجدد
+aether-ctl passwall add-node          # ساخت تنها نود رسمی: aether_node
+```
+
+رفتار:
+
+- دستور `status` همه نودهای loopback از نوع SOCKS که نام یا remarks آن‌ها حاوی
+  «aether» است را بررسی می‌کند؛ تطابق دقیق آدرس/پورت با شنونده فعلی Aether به
+  عنوان «پیکربندی‌شده» و هر چیز دیگری به عنوان تداخل گزارش می‌شود.
+- غیرفعال کردن Localhost Proxy از لوپ مسیریابی جلوگیری می‌کند: تا زمانی که فعال
+  است، Passwall2 ترافیک handshake خود هسته Aether را رهگیری می‌کند و تونل هرگز
+  بالا نمی‌آید. اگر کلید اصلی Passwall2 روشن باشد، پس از تغییر به‌طور خودکار
+  restart می‌شود.
+- دستور `add-node` دقیقاً یک نود به نام `aether_node` (نوع Xray، پروتکل socks،
+  transport برابر raw) رو به آدرس فعلی Aether می‌سازد و هرگز ورود دوم ایجاد
+  نمی‌کند.
+- اگر نود مرتبط با Aether از قبل به آدرس/پورت دیگری اشاره کند، چیزی تغییر
+  نمی‌کند: در CLI و LuCI دستورالعمل اصلاح دستی نمایش داده می‌شود (ویرایش
+  Address/Port همان نود در Services -> Passwall2 -> Nodes یا حذف آن و اجرای
+  دوباره `add-node`).
+
 ## دستورات CLI
 
 ```sh
@@ -85,7 +121,11 @@ aether-ctl status
 aether-ctl show
 aether-ctl log 100
 aether-ctl test google.com
+aether-ctl passwall status            # وضعیت پل Passwall2
+aether-ctl passwall localhost off     # غیرفعال کردن پروکسی لوکال‌هاست Passwall2
+aether-ctl passwall add-node          # ساخت نود socks اشاره‌کننده به Aether
 aether-ctl set protocol wg
+aether-ctl set upstream_proxy socks5://192.168.1.9:1082
 aether-ctl update
 aether-ctl change-version v1.5.0 --start
 aether-ctl update --version v1.5.0 --start
@@ -114,14 +154,15 @@ chmod +x /tmp/aether-install.sh
 ```
 
 نصب‌کننده حداکثر پنج نسخه پایدار هسته از v1.5.0 به بعد را نمایش می‌دهد و
-پیش‌فرض آن v1.6.0 است. برای automation از `--non-interactive` استفاده کنید و
+پیش‌فرض آن v1.7.0 است. برای automation از `--non-interactive` استفاده کنید و
 برای نسخه مشخص v1.5.0 به بعد `--version vX.Y.Z` را بدهید. دستور
 `aether-ctl update` آخرین updater ریپو را دریافت کرده و همین فرآیند نصب را
 اجرا می‌کند؛ `aether-ctl change-version vX.Y.Z` میانبر مشخص برای تغییر نسخه
 هسته است. پیش از شروع و پیش از رندر فرم LuCI، نسخه هسته تشخیص داده می‌شود.
 در v1.5 گزینه‌های مخصوص v1.6 شامل HTTP CONNECT proxy، MASQUE startup deadline
-و کنترل سطح لاگ مخفی شده و به هسته ارسال نمی‌شوند. در v1.6 و جدیدتر، تا وقتی
-پروفایل اختصاصی وجود نداشته باشد، رفتار v1.6 استفاده می‌شود. در آپدیت، کانفیگ
+و کنترل سطح لاگ مخفی شده و به هسته ارسال نمی‌شوند. نسخه‌های v1.6 پروفایل
+قابلیت v1.6 را دارند و نسخه‌های v1.7 و جدیدتر علاوه بر آن، زنجیره پروکسی
+بالادستی (گزینه `upstream_proxy`) را هم پشتیبانی می‌کنند. در آپدیت، کانفیگ
 و هویت‌ها حفظ می‌شوند مگر `--force-config` استفاده شود.
 
 نصب تازه روی `0.0.0.0:1819` گوش می‌دهد تا کلاینت‌های LAN بتوانند استفاده کنند.

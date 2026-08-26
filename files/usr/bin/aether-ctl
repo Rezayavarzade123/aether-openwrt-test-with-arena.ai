@@ -1,6 +1,6 @@
 #!/bin/sh
 # aether-ctl — CLI management tool for Aether on OpenWrt
-# Usage: aether-ctl {start|stop|restart|status|show|set|version|change-version|test|update}
+# Usage: aether-ctl {start|stop|restart|status|show|set|version|change-version|test|check-ip|update}
 
 UCI="/sbin/uci"
 PROG="/usr/bin/aether"
@@ -41,6 +41,30 @@ core_supports_v16() {
 	minor="${rest%%.*}"
 	[ "$major" -gt 1 ] 2>/dev/null ||
 		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 6 ] 2>/dev/null; }
+}
+
+core_supports_v17() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 1 ] 2>/dev/null ||
+		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 7 ] 2>/dev/null; }
+}
+
+# Mask credentials embedded in an upstream proxy URL:
+# socks5://user:pass@host:1080 -> socks5://***@host:1080
+redact_url() {
+	local url="$1" prefix="" rest
+	case "$url" in
+		*@*) ;;
+		*) echo "$url"; return ;;
+	esac
+	rest="${url##*@}"
+	case "$url" in
+		*://*) prefix="${url%%://*}://" ;;
+	esac
+	echo "${prefix}***@${rest}"
 }
 
 core_is_v15() {
@@ -133,6 +157,7 @@ do_show() {
 	local protocol=$(uci_get protocol)
 	local socks_listen=$(uci_get socks_listen)
 	local http_proxy=$(uci_get http_proxy)
+	local upstream_proxy=$(uci_get upstream_proxy)
 	local scan_mode=$(uci_get scan_mode)
 	local ip_version=$(uci_get ip_version)
 	local obfuscation_profile=$(uci_get obfuscation_profile)
@@ -157,6 +182,8 @@ do_show() {
 	local installed_version=$(core_version)
 	local supports_v16=0
 	[ -n "$installed_version" ] && core_supports_v16 "$installed_version" && supports_v16=1
+	local supports_v17=0
+	[ -n "$installed_version" ] && core_supports_v17 "$installed_version" && supports_v17=1
 
 	log_key "Boot Enabled" "$([ "$enabled" = "1" ] && echo "yes" || echo "no")"
 	log_key "Core Version" "${installed_version:-unknown}"
@@ -166,6 +193,11 @@ do_show() {
 		[ -n "$http_proxy" ] && log_key "HTTP Proxy" "$http_proxy"
 	else
 		[ -n "$http_proxy" ] && log_key "HTTP Proxy" "stored (inactive on core v${installed_version:-unknown})"
+	fi
+	if [ "$supports_v17" -eq 1 ]; then
+		[ -n "$upstream_proxy" ] && log_key "Upstream Proxy" "$(redact_url "$upstream_proxy")"
+	else
+		[ -n "$upstream_proxy" ] && log_key "Upstream Proxy" "stored (inactive on core v${installed_version:-unknown})"
 	fi
 	log_key "Scan Mode" "${scan_mode:-balanced}"
 	log_key "IP Version" "${ip_version:-ipv4}"
@@ -280,6 +312,133 @@ do_test() {
 		fi
 	fi
 }
+do_check_ip() {
+	# Always use 127.0.0.1 for local test even if UCI has 0.0.0.0
+	local socks=$(uci_get socks_listen)
+	socks=$(echo "$socks" | sed 's/0\.0\.0\.0/127.0.0.1/')
+	[ -z "$socks" ] && socks="127.0.0.1:1819"
+
+	# Check curl is installed
+	if ! command -v curl >/dev/null 2>&1; then
+		if command -v apk >/dev/null 2>&1; then
+			log_err "curl not found. Install with: apk add curl"
+		elif command -v opkg >/dev/null 2>&1; then
+			log_err "curl not found. Install with: opkg install curl"
+		else
+			log_err "curl not found. Install curl using your package manager."
+		fi
+		return 1
+	fi
+
+	log_info "Checking public IP via SOCKS5 ($socks)..."
+
+	local raw exit_code meta body http_code time_s time_ms ip country
+
+	# Provider 1: ifconfig.co/json (Cloudflare-hosted, full country name)
+	raw=$(curl -s \
+		-w "\n%{http_code} %{time_total}" \
+		--socks5-hostname "$socks" \
+		--connect-timeout 8 --max-time 12 \
+		"https://ifconfig.co/json" 2>/dev/null)
+	exit_code=$?
+
+	if [ $exit_code -eq 0 ] && [ -n "$raw" ]; then
+		meta=$(echo "$raw" | tail -n 1)
+		body=$(echo "$raw" | sed '$d')
+		http_code=$(echo "$meta" | awk '{print $1}')
+		time_s=$(echo "$meta" | awk '{print $2}')
+		time_ms=$(awk -v t="$time_s" 'BEGIN{printf "%.0f", t*1000}')
+		[ -z "$time_ms" ] && time_ms="0"
+
+		if [ "$http_code" = "200" ] && [ -n "$body" ]; then
+			if command -v jsonfilter >/dev/null 2>&1; then
+				ip=$(printf '%s' "$body" | jsonfilter -e '@.ip' 2>/dev/null)
+				country=$(printf '%s' "$body" | jsonfilter -e '@.country' 2>/dev/null)
+			fi
+			[ -z "$ip" ] && ip=$(printf '%s' "$body" | sed -n 's/.*"ip":[[:space:]]*"\([^"]*\)".*/\1/p')
+			[ -z "$country" ] && country=$(printf '%s' "$body" | sed -n 's/.*"country":[[:space:]]*"\([^"]*\)".*/\1/p')
+
+			if [ -n "$ip" ]; then
+				if [ -n "$country" ]; then
+					log_info "IP: $ip ($country) ${time_ms}ms"
+				else
+					log_info "IP: $ip ${time_ms}ms"
+				fi
+				return 0
+			fi
+		fi
+	fi
+
+	# Provider 2: ipwho.is (fallback)
+	raw=$(curl -s \
+		-w "\n%{http_code} %{time_total}" \
+		--socks5-hostname "$socks" \
+		--connect-timeout 8 --max-time 12 \
+		"https://ipwho.is/" 2>/dev/null)
+	exit_code=$?
+
+	if [ $exit_code -eq 0 ] && [ -n "$raw" ]; then
+		meta=$(echo "$raw" | tail -n 1)
+		body=$(echo "$raw" | sed '$d')
+		http_code=$(echo "$meta" | awk '{print $1}')
+		time_s=$(echo "$meta" | awk '{print $2}')
+		time_ms=$(awk -v t="$time_s" 'BEGIN{printf "%.0f", t*1000}')
+		[ -z "$time_ms" ] && time_ms="0"
+
+		if [ "$http_code" = "200" ] && [ -n "$body" ]; then
+			ip="" country=""
+			if command -v jsonfilter >/dev/null 2>&1; then
+				ip=$(printf '%s' "$body" | jsonfilter -e '@.ip' 2>/dev/null)
+				country=$(printf '%s' "$body" | jsonfilter -e '@.country' 2>/dev/null)
+			fi
+			[ -z "$ip" ] && ip=$(printf '%s' "$body" | sed -n 's/.*"ip":[[:space:]]*"\([^"]*\)".*/\1/p')
+			[ -z "$country" ] && country=$(printf '%s' "$body" | sed -n 's/.*"country":[[:space:]]*"\([^"]*\)".*/\1/p')
+
+			if [ -n "$ip" ]; then
+				if [ -n "$country" ]; then
+					log_info "IP: $ip ($country) ${time_ms}ms"
+				else
+					log_info "IP: $ip ${time_ms}ms"
+				fi
+				return 0
+			fi
+		fi
+	fi
+
+	# Provider 3: cloudflare.com/cdn-cgi/trace (native Cloudflare edge)
+	raw=$(curl -s \
+		-w "\n%{http_code} %{time_total}" \
+		--socks5-hostname "$socks" \
+		--connect-timeout 8 --max-time 12 \
+		"https://cloudflare.com/cdn-cgi/trace" 2>/dev/null)
+	exit_code=$?
+
+	if [ $exit_code -eq 0 ] && [ -n "$raw" ]; then
+		meta=$(echo "$raw" | tail -n 1)
+		body=$(echo "$raw" | sed '$d')
+		http_code=$(echo "$meta" | awk '{print $1}')
+		time_s=$(echo "$meta" | awk '{print $2}')
+		time_ms=$(awk -v t="$time_s" 'BEGIN{printf "%.0f", t*1000}')
+		[ -z "$time_ms" ] && time_ms="0"
+
+		if [ "$http_code" = "200" ] && [ -n "$body" ]; then
+			ip=$(printf '%s\n' "$body" | awk -F= '$1=="ip"{print $2}')
+			country=$(printf '%s\n' "$body" | awk -F= '$1=="loc"{print $2}')
+
+			if [ -n "$ip" ]; then
+				if [ -n "$country" ]; then
+					log_info "IP: $ip ($country) ${time_ms}ms"
+				else
+					log_info "IP: $ip ${time_ms}ms"
+				fi
+				return 0
+			fi
+		fi
+	fi
+
+	log_err "FAILED ${time_ms:-15000}ms"
+	return 1
+}
 
 do_set() {
 	local key="$1"
@@ -293,6 +452,7 @@ do_set() {
 		echo "  protocol            masque/wg/gool"
 		echo "  socks_listen        ip:port"
 		echo "  http_proxy          ip:port (optional HTTP CONNECT proxy)"
+		echo "  upstream_proxy      proxy URL (v1.7+ upstream chaining; e.g. socks5://[user:pass@]host:port)"
 		echo "  scan_mode           turbo/balanced/thorough/stealth/ironclad"
 		echo "  ip_version          ipv4/ipv6/both"
 		echo "  obfuscation_profile firewall/gfw/balanced/aggressive/light/off"
@@ -363,7 +523,7 @@ do_set() {
 			case "$value" in
 				''|*[!0-9]*) log_err "Invalid numeric value: $value"; return 1 ;;
 			esac ;;
-		socks_listen|http_proxy|obfuscation_profile|h2_peer|fragment_size|fragment_delay|peer|log_level|team|access_id|access_secret|access_token) ;;
+		socks_listen|http_proxy|upstream_proxy|obfuscation_profile|h2_peer|fragment_size|fragment_delay|peer|log_level|team|access_id|access_secret|access_token) ;;
 		*)
 			log_err "Unknown configuration option: $key"
 			return 1
@@ -381,6 +541,8 @@ do_set() {
 	fi
 	if [ "$key" = "access_secret" ] || [ "$key" = "access_token" ]; then
 		log_info "Set $key = (redacted)"
+	elif [ "$key" = "upstream_proxy" ]; then
+		log_info "Set $key = $(redact_url "$value")"
 	else
 		log_info "Set $key = $value"
 	fi
@@ -502,6 +664,232 @@ do_log() {
 	echo "Tip: use 'logread -f -e aether' for real-time logs"
 }
 
+# --- Passwall2 integration ----------------------------------------------
+# Optional bridge to luci-app-passwall2. Lets operators turn off Passwall2's
+# router-local (localhost) proxying, which competes with Aether for local
+# traffic, and manage exactly one canonical Passwall2 socks node
+# ("aether_node") pointing at Aether's SOCKS5 listener.
+
+PW_CFG="passwall2"
+PW_NODE="aether_node"
+
+pw_installed() {
+	$UCI -q show "$PW_CFG" >/dev/null 2>&1
+}
+
+pw_global_get() {
+	$UCI -q get "${PW_CFG}.@global[0].$1" 2>/dev/null
+}
+
+# Sets PW_AE_HOST / PW_AE_PORT from aether.socks_listen.
+pw_set_host_port() {
+	local listen host
+	listen="$(uci_get socks_listen)"
+	[ -n "$listen" ] || listen="0.0.0.0:1819"
+	host="${listen%:*}"
+	case "$host" in
+		0.0.0.0|'')  host=127.0.0.1 ;;
+		':'|'::')    host='::1' ;;
+		'['*']')     host='::1' ;;
+	esac
+	PW_AE_HOST="$host"
+	PW_AE_PORT="${listen##*:}"
+}
+
+pw_node_sections() {
+	$UCI -q show "$PW_CFG" 2>/dev/null |
+		sed -n "s/^$PW_CFG\.\([^.]*\)=nodes$/\1/p"
+}
+
+# Loopback socks nodes are candidates for pointing at Aether.
+pw_is_loopback_addr() {
+	case "$1" in
+		127.0.0.1|::1|localhost|0.0.0.0|'') return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+# A node belongs to this integration when its section name or remarks
+# mention aether. Everything else is the operator's own configuration.
+pw_is_aether_node() {
+	case "${1}${2}" in
+		*aether*|*Aether*|*AETHER*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+pw_print_conflict_fix() {
+	local sec="$1"
+	echo ""
+	echo "Fix (pick one):"
+	echo "  1. LuCI -> Services -> Passwall2 -> Nodes -> edit '$sec':"
+	echo "     set Address=$PW_AE_HOST and Port=$PW_AE_PORT, then Save & Apply."
+	echo "  2. Delete that node, apply, then run: aether-ctl passwall add-node"
+}
+
+do_passwall_status() {
+	local sec proto addr prt remark first_sec
+	local matched_count=0 conflict_count=0
+	matched_nodes="" conflict_nodes="" conflict_names=""
+
+	if ! pw_installed; then
+		echo "passwall2_present=0"
+		log_warn "Passwall2 config not found (is luci-app-passwall2 installed?)"
+		return 1
+	fi
+
+	pw_set_host_port
+	echo "passwall2_present=1"
+	echo "passwall2_enabled=$(pw_global_get enabled)"
+	echo "localhost_proxy=$(pw_global_get localhost_proxy)"
+	echo "client_proxy=$(pw_global_get client_proxy)"
+	echo "aether_socks_addr=${PW_AE_HOST}:${PW_AE_PORT}"
+
+	for sec in $(pw_node_sections); do
+		proto="$($UCI -q get "$PW_CFG.$sec.protocol" 2>/dev/null)"
+		[ "$proto" = "socks" ] || continue
+		addr="$($UCI -q get "$PW_CFG.$sec.address" 2>/dev/null)"
+		pw_is_loopback_addr "$addr" || continue
+		prt="$($UCI -q get "$PW_CFG.$sec.port" 2>/dev/null)"
+		remark="$($UCI -q get "$PW_CFG.$sec.remarks" 2>/dev/null)"
+		pw_is_aether_node "$sec" "$remark" || continue
+		if [ "$addr" = "$PW_AE_HOST" ] && [ "$prt" = "$PW_AE_PORT" ]; then
+			matched_count=$((matched_count + 1))
+			matched_nodes="$matched_nodes $sec(${remark:-no-remarks})"
+		else
+			conflict_count=$((conflict_count + 1))
+			conflict_nodes="$conflict_nodes $sec(${addr}:${prt}, remarks=${remark:-none})"
+			conflict_names="$conflict_names $sec"
+		fi
+	done
+
+	echo "node_found=$matched_count"
+	echo "matched_nodes=$matched_nodes"
+	echo "conflict_count=$conflict_count"
+	echo "conflict_nodes=$conflict_nodes"
+	echo "conflict_names=$conflict_names"
+
+	log_key "Passwall2" "installed (global enabled=$(pw_global_get enabled))"
+	log_key "Localhost Proxy" "$(pw_global_get localhost_proxy)"
+	log_key "Client Proxy" "$(pw_global_get client_proxy)"
+	log_key "Aether SOCKS" "${PW_AE_HOST}:${PW_AE_PORT}"
+	if [ "$matched_count" -gt 0 ]; then
+		log_key "Matching Nodes" "$matched_nodes"
+	elif [ "$conflict_count" -gt 0 ]; then
+		first_sec="${conflict_names# }"
+		first_sec="${first_sec%% *}"
+		log_key "Matching Nodes" "none"
+		log_warn "Existing Aether node(s) point elsewhere:$conflict_nodes"
+		pw_print_conflict_fix "$first_sec"
+	else
+		log_key "Matching Nodes" "none"
+		log_warn "No Passwall2 socks node points at ${PW_AE_HOST}:${PW_AE_PORT} (fix: aether-ctl passwall add-node)"
+	fi
+	return 0
+}
+
+do_passwall_localhost() {
+	local value="$1"
+	case "$value" in
+		on|1|yes|enable)   value=1 ;;
+		off|0|no|disable)  value=0 ;;
+		*)
+			log_err "Usage: aether-ctl passwall localhost on|off"
+			return 1
+			;;
+	esac
+	if ! pw_installed; then
+		log_err "Passwall2 config not found"
+		return 1
+	fi
+	local pw_enabled
+	pw_enabled="$(pw_global_get enabled)"
+	# Never quote the value in "uci set key=value".
+	$UCI set "${PW_CFG}.@global[0].localhost_proxy=$value"
+	$UCI commit "$PW_CFG"
+	if [ "$value" = "1" ]; then
+		log_info "Passwall2 localhost_proxy set to 1"
+	else
+		log_info "Passwall2 localhost_proxy disabled (router-local traffic no longer proxied by Passwall2)"
+	fi
+	if [ "$pw_enabled" = "1" ] && [ -x /etc/init.d/passwall2 ]; then
+		if /etc/init.d/passwall2 restart >/dev/null 2>&1; then
+			log_info "Passwall2 restarted to apply"
+		else
+			log_warn "Could not restart Passwall2 automatically; restart it manually"
+		fi
+	fi
+}
+
+do_passwall_add_node() {
+	local sec="$PW_NODE"
+	local existing proto addr prt remark
+	if ! pw_installed; then
+		log_err "Passwall2 config not found"
+		return 1
+	fi
+	if pw_node_sections | grep -Fxq "$sec" 2>/dev/null; then
+		log_err "Passwall2 node '$sec' already exists; nothing to do"
+		return 1
+	fi
+	pw_set_host_port
+	# Never create a second Aether node. If any aether-marked loopback
+	# socks node exists, tell the operator how to reconcile instead of
+	# silently adding another entry.
+	for existing in $(pw_node_sections); do
+		proto="$($UCI -q get "$PW_CFG.$existing.protocol" 2>/dev/null)"
+		[ "$proto" = "socks" ] || continue
+		addr="$($UCI -q get "$PW_CFG.$existing.address" 2>/dev/null)"
+		pw_is_loopback_addr "$addr" || continue
+		prt="$($UCI -q get "$PW_CFG.$existing.port" 2>/dev/null)"
+		remark="$($UCI -q get "$PW_CFG.$existing.remarks" 2>/dev/null)"
+		pw_is_aether_node "$existing" "$remark" || continue
+		if [ "$addr" = "$PW_AE_HOST" ] && [ "$prt" = "$PW_AE_PORT" ]; then
+			log_err "Passwall2 node '$existing' already points at ${PW_AE_HOST}:${PW_AE_PORT}; nothing to do"
+		else
+			log_err "Passwall2 node '$existing' points at ${addr}:${prt} but Aether listens on ${PW_AE_HOST}:${PW_AE_PORT}"
+			pw_print_conflict_fix "$existing"
+		fi
+		return 1
+	done
+
+	# Never quote values in "uci set key=value"; all values below are fixed
+	# tokens without spaces so quoting is unnecessary.
+	$UCI set "${PW_CFG}.${sec}=nodes"
+	$UCI set "${PW_CFG}.${sec}.remarks=aether"
+	$UCI set "${PW_CFG}.${sec}.type=Xray"
+	$UCI set "${PW_CFG}.${sec}.protocol=socks"
+	$UCI set "${PW_CFG}.${sec}.address=${PW_AE_HOST}"
+	$UCI set "${PW_CFG}.${sec}.port=${PW_AE_PORT}"
+	$UCI set "${PW_CFG}.${sec}.tls=0"
+	$UCI set "${PW_CFG}.${sec}.transport=raw"
+	$UCI set "${PW_CFG}.${sec}.tcp_fast_open=0"
+	$UCI set "${PW_CFG}.${sec}.tcpMptcp=0"
+	$UCI commit "$PW_CFG"
+	log_info "Created Passwall2 node '$sec' -> socks ${PW_AE_HOST}:${PW_AE_PORT}"
+	log_warn "Select '$sec' in Passwall2 (node or shunt rules) to route traffic through Aether"
+}
+
+do_passwall() {
+	local action="${1:-status}"
+	case "$action" in
+		status)
+			shift 2>/dev/null
+			do_passwall_status "$@"
+			;;
+		localhost)
+			do_passwall_localhost "${2:-}"
+			;;
+		add-node)
+			do_passwall_add_node
+			;;
+		*)
+			echo "Usage: aether-ctl passwall <status|localhost <on|off>|add-node>"
+			return 1
+			;;
+	esac
+}
+
 case "${1:-}" in
 	start)    do_start ;;
 	stop)     do_stop ;;
@@ -510,7 +898,9 @@ case "${1:-}" in
 	show)     do_show ;;
 	set)      do_set "$2" "$3" ;;
 	test)     do_test "$2" ;;
+	check-ip|ip) do_check_ip ;;
 	log)      do_log "$2" ;;
+	passwall) shift; do_passwall "$@" ;;
 	version)  shift; do_version "$@" ;;
 	change-version) shift; do_change_version "$@" ;;
 	update)   shift; do_update "$@" ;;
@@ -527,7 +917,10 @@ case "${1:-}" in
 		echo "  show            Show current configuration"
 		echo "  set <opt> <val> Change a configuration option"
 		echo "  test <host>     Test connection through the tunnel"
+		echo "  check-ip        Check public IP address, country, and ping"
+		echo "  ip              Alias for check-ip"
 		echo "  log [lines]     Show Aether logs (default 50 lines)"
+		echo "  passwall <cmd>  Passwall2 bridge: status | localhost on|off | add-node"
 		echo "  version [change <tag> [opts]]  Show or change the Aether core version"
 		echo "  change-version <tag> [opts]     Install a core version (v1.5.0+)"
 		echo "  update [opts]                   Download current updater and reinstall"
@@ -538,6 +931,10 @@ case "${1:-}" in
 		echo "  aether-ctl set scan_mode ironclad"
 		echo "  aether-ctl set obfuscation_profile aggressive"
 		echo "  aether-ctl test google.com"
+		echo "  aether-ctl check-ip"
+		echo "  aether-ctl passwall status"
+		echo "  aether-ctl passwall localhost off"
+		echo "  aether-ctl passwall add-node"
 		echo "  aether-ctl set enabled no"
 		echo "  aether-ctl change-version v1.5.0 --start"
 		echo "  aether-ctl update --version v1.6.0 --start"
