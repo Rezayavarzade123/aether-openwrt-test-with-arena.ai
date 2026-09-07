@@ -42,7 +42,7 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 
 ## قابلیت‌ها
 
-- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip`، `aether-ctl change-version <vX.Y.Z>` و `aether-ctl passwall <status|localhost <on|off>|add-node>`
+- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip`، `aether-ctl change-version <vX.Y.Z>`، `aether-ctl passwall <…>` و گزینه‌های پروفایل عملکرد و gool دو مرحله‌ای (`perf_profile`، `wiw_outer`، `wiw_inner`)
 - **LuCI**: Services -> Aether
   - جدول وضعیت (وضعیت، نسخه، endpoint، transport، آدرس SOCKS5)
   - دکمه‌های Start / Stop / Restart
@@ -105,12 +105,17 @@ aether-ctl update --version v1.5.0 --start
 دوباره اجرا می‌کند. کانفیگ `/etc/config/aether` و هویت‌های معتبر `/etc/aether`
 حفظ می‌شوند، مگر این‌که `--force-config` داده شود. فایل هسته همیشه با SHA-256
 ریلیز رسمی بررسی می‌شود. کلاینت از هسته v1.5.0 و جدیدتر پشتیبانی می‌کند و
-پیش‌فرض آن v1.7.0 است. پیش از شروع سرویس و پیش از رندر رابط LuCI، نسخه هسته
+پیش‌فرض آن v1.9.0 است. پیش از شروع سرویس و پیش از رندر رابط LuCI، نسخه هسته
 تشخیص داده می‌شود. در v1.5، گزینه‌های مخصوص v1.6 شامل HTTP CONNECT proxy،
 MASQUE startup deadline و کنترل سطح لاگ نمایش داده نشده و به هسته ارسال
-نمی‌شوند. نسخه‌های v1.6 پروفایل قابلیت v1.6 را دارند و نسخه‌های v1.7 و
-جدیدتر علاوه بر آن، زنجیره پروکسی بالادستی (گزینه UCI `upstream_proxy`) را
-هم پشتیبانی می‌کنند.
+نمی‌شوند. نسخه‌های v1.6 پروفایل قابلیت v1.6 را دارند و نسخه‌های v1.7 زنجیره
+پروکسی بالادستی (گزینه UCI `upstream_proxy`) را پشتیبانی می‌کنند. نسخه‌های
+v1.8 پروفایل عملکرد را اضافه می‌کنند (گزینه UCI `perf_profile`؛ خالی = انتخاب
+خودکار بر اساس رم روتر). قوانین مسیریابی، DNS درون‌تونل، ECH و گروه‌های TLS
+در پیش‌فرض خود هسته باقی می‌مانند و این کلاینت عمداً آن‌ها را نمایش نمی‌دهد
+ابزارهای پروکسی شفاف مانند Passwall2 تقسیم ترافیک را بهتر انجام می‌دهند.
+نسخه‌های v1.9 به بعد endpointهای دو مرحله‌ای gool را اضافه می‌کنند (گزینه‌های
+UCI `wiw_outer` و `wiw_inner`؛ خالی = اسکن هر دو مرحله توسط هسته).
 
 ## رابط وب LuCI
 
@@ -127,6 +132,7 @@ MASQUE startup deadline و کنترل سطح لاگ نمایش داده نشده
 - تاگل اسکرول خودکار
 - دکمه پاک کردن لاگ‌ها
 - بخش Passwall2 Integration (زیر تنظیمات Advanced) برای اتصال شفاف کل شبکه از طریق تونل Aether
+- پروفایل عملکرد (زیر Advanced؛ هسته v1.8+) با انتخاب خودکار بر اساس رم روتر، و endpointهای gool دو مرحله‌ای (هسته v1.9+)
 - پیکربندی کامل (پروتکل، حالت اسکن، obfuscation، HTTP/2 و غیره)
 
 اگر بعد از به‌روزرسانی صفحه جدید LuCI یا فیلدهای جدید را نمی‌بینید، با

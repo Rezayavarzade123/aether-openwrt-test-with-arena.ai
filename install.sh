@@ -18,7 +18,7 @@
 
 # No set -e — we handle errors explicitly with || blocks and error() calls.
 umask 077
-CLIENT_VERSION="v0.5.1"
+CLIENT_VERSION="v0.6.0"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -95,7 +95,7 @@ esac
 
 REPO="CluvexStudio/Aether"
 API_URL="https://api.github.com/repos/${REPO}/releases?per_page=30"
-DEFAULT_VERSION="v1.7.0"
+DEFAULT_VERSION="v1.9.0"
 
 echo ""
 echo "========================================="

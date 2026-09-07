@@ -114,6 +114,66 @@ Behavior:
   (edit that node's Address/Port under Services -> Passwall2 -> Nodes, or
   delete it and run `add-node` again).
 
+## Performance Profile (core v1.8+)
+
+Core v1.8 introduced a resource profile (`--perf low|medium|high`). The client
+exposes it as the **Performance Profile** field in LuCI (Advanced section) and
+via `aether-ctl set perf_profile low|medium|high|auto`. When set to **Auto (by
+RAM)** — the default — the service picks the profile from total router memory
+at every start:
+
+| Total RAM | Profile |
+| --- | --- |
+| < 256 MB | `low` |
+| 256 MB – 768 MB | `medium` |
+| > 768 MB | `high` |
+
+Measured on core v1.9.0 (x86_64, peak VmRSS sampled every second; 50 MB
+download plus a 5 MB PUT upload per run — the shared `__up` endpoint resets
+the upload after part of the body, which does not affect the buffer-driven
+peak; MB ≈ peak_kb/1024):
+
+| Protocol | Profile | Download peak | Upload peak |
+| --- | --- | --- | --- |
+| MASQUE | low | 10.2 MB | 9.8 MB |
+| MASQUE | medium | 15.9 MB | 12.6 MB |
+| MASQUE | high | 22.6 MB | 12.3 MB |
+| WireGuard | low | 7.9 MB | 7.6 MB |
+| WireGuard | medium | 12.9 MB | 11.2 MB |
+| WireGuard | high | 20.0 MB | 10.7 MB |
+| gool | low | 7.8 MB | 7.7 MB |
+| gool | medium | 13.4 MB | 11.2 MB |
+| gool | high | 20.9 MB | 10.9 MB |
+
+Peak memory scales with the profile, not the protocol; idle RSS is ~5.6–7.1 MB
+across the board. The thresholds above leave headroom below the measured peaks
+for routers with less RAM.
+
+Two other v1.8 core features — **routing rules** (`--route-block`,
+`--route-direct`) and **TLS key-share groups** (`--tls-groups`) — are
+deliberately not exposed by this client: transparent-proxy tools such as
+Passwall2 on the same router split traffic better than in-tunnel rules, and
+the default TLS groups match modern browsers. In-tunnel DNS and ECH also stay
+at their core defaults. The client passes no `--ech` flag either — the core's
+own default applies; the core docs only document the explicit `--ech auto`
+mode.
+
+## Dual-Hop gool Endpoints (core v1.9+)
+
+Core v1.9 lets you pin each WARP-in-WARP hop independently. In LuCI the
+**gool Outer Hop** / **gool Inner Hop** fields appear when the protocol is
+`gool` (Advanced section); on the CLI:
+
+```sh
+aether-ctl set wiw_outer 162.159.192.1:2408
+aether-ctl set wiw_inner 188.114.96.1:2408
+aether-ctl set wiw_outer auto   # clear back to auto-scan
+```
+
+Set one hop and the core scans only for the other; set both and no scan runs.
+`auto` (or an empty value) restores the default behaviour where the core scans
+both hops. A named hop is retried on reconnect instead of being replaced.
+
 ## CLI
 
 ```sh
@@ -126,8 +186,11 @@ aether-ctl log 100
 aether-ctl test google.com
 aether-ctl passwall status            # Passwall2 bridge status
 aether-ctl passwall localhost off     # disable Passwall2 router-local proxying
-aether-ctl passwall add-node          # create a socks node pointing at Aether
 aether-ctl set protocol wg
+aether-ctl set perf_profile auto       # or low / medium / high (v1.8+)
+aether-ctl set wiw_outer 162.159.192.1:2408   # gool outer hop (v1.9+)
+aether-ctl set wiw_inner 188.114.96.1:2408    # gool inner hop (v1.9+)
+aether-ctl passwall add-node          # create a socks node pointing at Aether
 aether-ctl set upstream_proxy socks5://192.168.1.9:1082
 aether-ctl update
 aether-ctl change-version v1.5.0 --start

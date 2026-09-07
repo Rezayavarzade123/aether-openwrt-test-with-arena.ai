@@ -12,7 +12,7 @@
 'require ui';
 'require view';
 
-var AETHER_CLIENT_VERSION = 'v0.5.1';
+var AETHER_CLIENT_VERSION = 'v0.6.0';
 
 /* Obfuscation profiles from Aether core guide — depend on protocol. */
 var AETHER_PROFILES = {
@@ -58,6 +58,23 @@ function aetherCoreSupportsV17(version) {
 	if (!m)
 		return false;
 	return Number(m[1]) > 1 || (Number(m[1]) === 1 && Number(m[2]) >= 7);
+}
+
+/* v1.8 added the resource performance profile. Routing rules, in-tunnel
+ * DNS and TLS groups are core-side defaults and deliberately not exposed. */
+function aetherCoreSupportsV18(version) {
+	var m = String(version || '').match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)/);
+	if (!m)
+		return false;
+	return Number(m[1]) > 1 || (Number(m[1]) === 1 && Number(m[2]) >= 8);
+}
+
+/* v1.9 added independent dual-hop gool endpoint control. */
+function aetherCoreSupportsV19(version) {
+	var m = String(version || '').match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)/);
+	if (!m)
+		return false;
+	return Number(m[1]) > 1 || (Number(m[1]) === 1 && Number(m[2]) >= 9);
 }
 
 function aetherSyncProfileChoices(profileOpt, section_id, protocol) {
@@ -394,6 +411,8 @@ return view.extend({
 		return getServiceStatus().then(function(st) {
 			var supportsV16 = aetherCoreSupportsV16(st.version);
 			var supportsV17 = aetherCoreSupportsV17(st.version);
+			var supportsV18 = aetherCoreSupportsV18(st.version);
+			var supportsV19 = aetherCoreSupportsV19(st.version);
 			var tbl = E('table', { 'class': 'table' });
 
 			function row(label, val) {
@@ -719,6 +738,13 @@ return view.extend({
 				el.appendChild(E('div', { 'class': 'alert-message warning' },
 					'Aether v1.6 compatibility mode: upstream proxy chaining requires core v1.7.0 or newer.'));
 			}
+			if (!supportsV18) {
+				el.appendChild(E('div', { 'class': 'alert-message warning' },
+					'Aether v1.7 compatibility mode: the performance profile requires core v1.8.0 or newer.'));
+			} else if (!supportsV19) {
+				el.appendChild(E('div', { 'class': 'alert-message warning' },
+					'Aether v1.8 compatibility mode: dual-hop gool endpoints require core v1.9.0 or newer.'));
+			}
 
 			s = m.section(form.NamedSection, 'main', 'aether', 'Network');
 
@@ -917,6 +943,35 @@ return view.extend({
 			o.default = '3';
 			o.datatype = 'range(2,10)';
 			o.depends('watchdog_enabled', '1');
+
+			if (supportsV18) {
+				o = s.option(form.ListValue, 'perf_profile', 'Performance Profile',
+					'Core resource profile. "Auto (by RAM)" picks low/medium/high from total router memory.');
+				o.value('', 'Auto (by RAM)');
+				o.value('low', 'Low (routers / low RAM)');
+				o.value('medium', 'Medium (typical desktop)');
+				o.value('high', 'High (servers)');
+				o.default = '';
+				o.rmempty = false;
+				o.write = function(section_id, formvalue) {
+					uci.set('aether', section_id, 'perf_profile', formvalue || '');
+					return true;
+				};
+			}
+
+			if (supportsV19) {
+				o = s.option(form.Value, 'wiw_outer', 'gool Outer Hop',
+					'Outer WARP-in-WARP endpoint (ip:port), the one your network sees. Leave empty to auto-scan.');
+				o.datatype = 'ipaddrport(1)';
+				o.rmempty = true;
+				o.depends('protocol', 'gool');
+
+				o = s.option(form.Value, 'wiw_inner', 'gool Inner Hop',
+					'Inner WARP-in-WARP endpoint (ip:port). Leave empty to auto-scan.');
+				o.datatype = 'ipaddrport(1)';
+				o.rmempty = true;
+				o.depends('protocol', 'gool');
+			}
 
 			return m.render().then(function(formNode) {
 				el.appendChild(formNode);

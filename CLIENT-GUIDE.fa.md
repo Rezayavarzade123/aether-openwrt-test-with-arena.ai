@@ -111,6 +111,66 @@ aether-ctl passwall add-node          # ساخت تنها نود رسمی: aethe
   Address/Port همان نود در Services -> Passwall2 -> Nodes یا حذف آن و اجرای
   دوباره `add-node`).
 
+## پروفایل عملکرد (هسته v1.8+)
+
+هسته v1.8 پروفایل منابع (`--perf low|medium|high`) را معرفی کرد. کلاینت آن را
+به صورت فیلد **Performance Profile** در LuCI (بخش Advanced) و از طریق
+`aether-ctl set perf_profile low|medium|high|auto` ارائه می‌دهد. وقتی روی
+**Auto (by RAM)** — حالت پیش‌فرض — باشد، سرویس در هر بار شروع، پروفایل را از
+مجموع رم روتر انتخاب می‌کند:
+
+| مجموع رم | پروفایل |
+| --- | --- |
+| کمتر از 256 MB | `low` |
+| 256 تا 768 MB | `medium` |
+| بیش از 768 MB | `high` |
+
+اندازه‌گیری روی هسته v1.9.0 (x86_64؛ نمونه‌برداری VmRSS هر ثانیه؛ در هر اجرا
+دانلود 50 مگابایتی به‌همراه آپلود 5 مگابایتی PUT — endpoint مشترک `__up`
+پس از بخشی از بدنه، آپلود را reset می‌کند که بر اوج حافظه مبتنی بر بافر اثر
+ندارد):
+
+| پروتکل | پروفایل | اوج دانلود | اوج آپلود |
+| --- | --- | --- | --- |
+| MASQUE | low | 10.2 MB | 9.8 MB |
+| MASQUE | medium | 15.9 MB | 12.6 MB |
+| MASQUE | high | 22.6 MB | 12.3 MB |
+| WireGuard | low | 7.9 MB | 7.6 MB |
+| WireGuard | medium | 12.9 MB | 11.2 MB |
+| WireGuard | high | 20.0 MB | 10.7 MB |
+| gool | low | 7.8 MB | 7.7 MB |
+| gool | medium | 13.4 MB | 11.2 MB |
+| gool | high | 20.9 MB | 10.9 MB |
+
+مصرف حافظه اوج به پروفایل بستگی دارد نه به پروتکل؛ RSS در حالت بی‌کاری برای همه
+حالت‌ها حدود 5.6 تا 7.1 مگابایت است. آستانه‌های بالا برای روترهای با رم کمتر،
+حاشیه امن کافی دارند.
+
+دو قابلیت دیگر هسته v1.8 — **قوانین مسیریابی** (`--route-block`،
+`--route-direct`) و **گروه‌های TLS key-share** (`--tls-groups`) — عمداً توسط
+این کلاینت ارائه نمی‌شوند: ابزارهای پروکسی شفاف مانند Passwall2 روی همان روتر
+تقسیم ترافیک را بهتر انجام می‌دهند و گروه‌های پیش‌فرض TLS منطبق با مرورگرهای
+مدرن است. DNS درون‌تونل و ECH نیز در پیش‌فرض خود هسته باقی می‌مانند؛ کلاینت
+پرچم `--ech` را ارسال نمی‌کند و پیش‌فرض خود هسته اعمال می‌شود (مستندات هسته
+فقط حالت صریح `--ech auto` را توضیح می‌دهد).
+
+## endpointهای gool دو مرحله‌ای (هسته v1.9+)
+
+هسته v1.9 امکان تعیین مستقل هر یک از دو مرحله WARP-in-WARP را می‌دهد. در LuCI
+فیلدهای **gool Outer Hop** / **gool Inner Hop** هنگام انتخاب پروتکل `gool`
+نمایش داده می‌شوند (بخش Advanced)؛ در خط فرمان:
+
+```sh
+aether-ctl set wiw_outer 162.159.192.1:2408
+aether-ctl set wiw_inner 188.114.96.1:2408
+aether-ctl set wiw_outer auto   # بازگشت به اسکن خودکار
+```
+
+با تعیین یکی از دو مرحله، هسته فقط برای مرحله دیگر اسکن می‌کند؛ با تعیین هر دو
+هیچ اسکنی اجرا نمی‌شود. مقدار `auto` (یا خالی) رفتار پیش‌فرض یعنی اسکن هر دو
+مرحله را برمی‌گرداند. مرحله‌ای که دستی تعیین شده در اتصال مجدد دوباره تلاش
+می‌شود و با نود اسکن‌شده جایگزین نمی‌گردد.
+
 ## دستورات CLI
 
 ```sh
@@ -125,6 +185,9 @@ aether-ctl passwall status            # وضعیت پل Passwall2
 aether-ctl passwall localhost off     # غیرفعال کردن پروکسی لوکال‌هاست Passwall2
 aether-ctl passwall add-node          # ساخت نود socks اشاره‌کننده به Aether
 aether-ctl set protocol wg
+aether-ctl set perf_profile auto       # یا low / medium / high (هسته v1.8+)
+aether-ctl set wiw_outer 162.159.192.1:2408   # مرحله بیرونی gool (هسته v1.9+)
+aether-ctl set wiw_inner 188.114.96.1:2408    # مرحله درونی gool (هسته v1.9+)
 aether-ctl set upstream_proxy socks5://192.168.1.9:1082
 aether-ctl update
 aether-ctl change-version v1.5.0 --start

@@ -40,7 +40,7 @@ During install you will be asked:
 
 ## Features
 
-- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip`, `aether-ctl change-version <vX.Y.Z>`, and `aether-ctl passwall <status|localhost <on|off>|add-node>`
+- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip`, `aether-ctl change-version <vX.Y.Z>`, `aether-ctl passwall <…>`, and perf-profile / dual-hop gool options (`perf_profile`, `wiw_outer`, `wiw_inner`)
 - **LuCI**: Services -> Aether
   - Status table (state, version, endpoint, transport, SOCKS5 address)
   - Start / Stop / Restart buttons
@@ -105,8 +105,8 @@ archive is always verified against the matching upstream SHA-256 file.
 
 ## Core compatibility
 
-Client release **v0.5.1** supports Aether core **v1.5.0 and newer** and defaults
-to **v1.7.0**. The client detects the installed core before starting the
+Client release **v0.6.0** supports Aether core **v1.5.0 and newer** and defaults
+to **v1.9.0**. The client detects the installed core before starting the
 service and before rendering the LuCI form, then applies the matching
 capability profile:
 
@@ -115,9 +115,14 @@ capability profile:
   CLI, and never passed to the core.
 - **Core v1.6.x:** uses the v1.6 capability profile (HTTP CONNECT proxy,
   MASQUE startup deadline, log levels).
-- **Core v1.7.x and newer:** adds upstream proxy chaining
-  (`upstream_proxy` UCI option). Newer core versions inherit this behavior
-  until a dedicated compatibility profile is needed.
+- **Core v1.7.x:** adds upstream proxy chaining (`upstream_proxy` UCI option).
+- **Core v1.8.x:** adds the performance profile (`perf_profile` UCI option;
+  empty = automatic selection from total RAM). Routing rules, in-tunnel DNS,
+  ECH, and TLS groups stay at their core defaults — this client deliberately
+  does not expose them (traffic splitting is better handled by transparent
+  proxy tools such as Passwall2 on the same router).
+- **Core v1.9.x and newer:** adds dual-hop WARP-in-WARP endpoints
+  (`wiw_outer` / `wiw_inner` UCI options; empty = core scans both hops).
 
 LuCI displays the client version and detected core version separately. To
 switch the installed core without changing the client integration, use:
@@ -126,13 +131,13 @@ switch the installed core without changing the client integration, use:
 aether-ctl change-version v1.5.0 --start
 aether-ctl change-version v1.6.0 --start
 aether-ctl change-version v1.7.0 --start
+aether-ctl change-version v1.9.0 --start
 ```
 
 The preserved UCI configuration may contain options unavailable to the
 selected core; those values remain stored for upgrades but are marked inactive
 and are not passed to incompatible cores. Routing rules, ECH, custom DNS, TLS
-groups, performance profiles, and per-protocol identity paths remain core-only
-options.
+groups, and per-protocol identity paths remain core-only options.
 
 ## LuCI Web Interface
 

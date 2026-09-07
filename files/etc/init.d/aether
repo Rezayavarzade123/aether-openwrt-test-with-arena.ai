@@ -69,6 +69,42 @@ core_supports_v17() {
 		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 7 ] 2>/dev/null; }
 }
 
+core_supports_v18() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 1 ] 2>/dev/null ||
+		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 8 ] 2>/dev/null; }
+}
+
+core_supports_v19() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 1 ] 2>/dev/null ||
+		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 9 ] 2>/dev/null; }
+}
+
+# Automatic performance profile from total RAM. Thresholds follow the
+# measured RSS table in CLIENT-GUIDE.en.md (core 1.9.0, x86_64): peak RSS
+# stays under the next-lower boundary with headroom for id-load spikes.
+select_perf_profile() {
+	local total_kb
+	total_kb="$(awk '/^MemTotal/ {print $2}' /proc/meminfo 2>/dev/null)"
+	case "$total_kb" in
+		''|*[!0-9]*) echo "low"; return ;;
+	esac
+	if [ "$total_kb" -lt 262144 ]; then
+		echo "low"
+	elif [ "$total_kb" -lt 786432 ]; then
+		echo "medium"
+	else
+		echo "high"
+	fi
+}
+
 start_service() {
 	config_load aether
 
@@ -78,8 +114,8 @@ start_service() {
 	local keepalive reconnect_secs validate_secs startup_secs quick_reconnect
 	local no_data_check config_path log_level
 	local no_profile_retry team access_id access_secret access_token
-	local upstream_proxy
-	local installed_version supports_v16 supports_v17
+	local upstream_proxy perf_profile wiw_outer wiw_inner
+	local installed_version supports_v16 supports_v17 supports_v18 supports_v19
 
 	installed_version="$(core_version)"
 	if [ -z "$installed_version" ]; then
@@ -92,15 +128,22 @@ start_service() {
 	else
 		supports_v17=0
 	fi
-	if core_supports_v16 "$installed_version"; then
-		supports_v16=1
+	if core_supports_v18 "$installed_version"; then
+		supports_v18=1
 	else
-		supports_v16=0
+		supports_v18=0
 	fi
-
+	if core_supports_v19 "$installed_version"; then
+		supports_v19=1
+	else
+		supports_v19=0
+	fi
 	config_get protocol main protocol 'masque'
 	config_get socks_listen main socks_listen '0.0.0.0:1819'
 	config_get http_proxy main http_proxy ''
+	config_get perf_profile main perf_profile ''
+	config_get wiw_outer main wiw_outer ''
+	config_get wiw_inner main wiw_inner ''
 	config_get upstream_proxy main upstream_proxy ''
 	config_get scan_mode main scan_mode 'balanced'
 	config_get ip_version main ip_version 'ipv4'
@@ -166,6 +209,21 @@ start_service() {
 		logger -t aether "Ignoring upstream proxy: Aether v$installed_version requires v1.7.0 or newer"
 	fi
 	procd_append_param command --config "$config_path"
+	# Core v1.8+ resource profile: explicit UCI value wins; empty selects
+	# automatically from total RAM (see select_perf_profile).
+	if [ "$supports_v18" -eq 1 ]; then
+		if [ -z "$perf_profile" ]; then
+			perf_profile="$(select_perf_profile)"
+			logger -t aether "auto-selected performance profile: $perf_profile"
+		fi
+		procd_append_param command --perf "$perf_profile"
+	fi
+	# Core v1.9+ dual-hop gool endpoints. Named hops are kept across
+	# reconnects by the core; unnamed hops are scanned as before.
+	if [ "$supports_v19" -eq 1 ] && [ "$protocol" = "gool" ]; then
+		[ -n "$wiw_outer" ] && procd_append_param command --wiw-outer "$wiw_outer"
+		[ -n "$wiw_inner" ] && procd_append_param command --wiw-inner "$wiw_inner"
+	fi
 	case "$protocol" in
 		masque)
 			procd_append_param command --masque

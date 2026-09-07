@@ -52,6 +52,24 @@ core_supports_v17() {
 		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 7 ] 2>/dev/null; }
 }
 
+core_supports_v18() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 1 ] 2>/dev/null ||
+		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 8 ] 2>/dev/null; }
+}
+
+core_supports_v19() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 1 ] 2>/dev/null ||
+		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 9 ] 2>/dev/null; }
+}
+
 # Mask credentials embedded in an upstream proxy URL:
 # socks5://user:pass@host:1080 -> socks5://***@host:1080
 redact_url() {
@@ -184,6 +202,13 @@ do_show() {
 	[ -n "$installed_version" ] && core_supports_v16 "$installed_version" && supports_v16=1
 	local supports_v17=0
 	[ -n "$installed_version" ] && core_supports_v17 "$installed_version" && supports_v17=1
+	local supports_v18=0
+	[ -n "$installed_version" ] && core_supports_v18 "$installed_version" && supports_v18=1
+	local supports_v19=0
+	[ -n "$installed_version" ] && core_supports_v19 "$installed_version" && supports_v19=1
+	local perf_profile=$(uci_get perf_profile)
+	local wiw_outer=$(uci_get wiw_outer)
+	local wiw_inner=$(uci_get wiw_inner)
 
 	log_key "Boot Enabled" "$([ "$enabled" = "1" ] && echo "yes" || echo "no")"
 	log_key "Core Version" "${installed_version:-unknown}"
@@ -222,6 +247,19 @@ do_show() {
 		log_key "Log Level" "${log_level:-info}"
 	else
 		log_key "Log Level" "inactive on core v${installed_version:-unknown}"
+	fi
+	if [ "$supports_v18" -eq 1 ]; then
+		log_key "Perf Profile" "${perf_profile:-auto (by RAM)}"
+	else
+		log_key "Perf Profile" "inactive on core v${installed_version:-unknown}"
+	fi
+	if [ "${protocol:-masque}" = "gool" ]; then
+		if [ "$supports_v19" -eq 1 ]; then
+			log_key "gool Outer Hop" "${wiw_outer:-auto-scan}"
+			log_key "gool Inner Hop" "${wiw_inner:-auto-scan}"
+		else
+			log_key "gool Hops" "inactive on core v${installed_version:-unknown}"
+		fi
 	fi
 	log_key "Zero Trust Team" "${team:-disabled}"
 	if [ -n "$team" ]; then
@@ -443,6 +481,8 @@ do_check_ip() {
 do_set() {
 	local key="$1"
 	local value="$2"
+	local installed_version
+	installed_version="$(core_version)"
 
 	if [ -z "$key" ] || [ -z "$value" ]; then
 		echo "Usage: aether-ctl set <option> <value>"
@@ -476,6 +516,9 @@ do_set() {
 		echo "  watchdog_enabled    0/1"
 		echo "  watchdog_interval   seconds"
 		echo "  watchdog_failures   failures before recovery"
+		echo "  perf_profile        low/medium/high (empty = auto by RAM; v1.8+)"
+		echo "  wiw_outer           ip:port (gool outer hop, v1.9+; 'auto' clears)"
+		echo "  wiw_inner           ip:port (gool inner hop, v1.9+; 'auto' clears)"
 		return 1
 	fi
 
@@ -483,6 +526,22 @@ do_set() {
 		case "$key" in
 			http_proxy|startup_secs|log_level)
 				log_err "$key requires Aether core v1.6.0 or newer"
+				return 1
+				;;
+		esac
+	fi
+	if [ -n "$installed_version" ] && ! core_supports_v18 "$installed_version"; then
+		case "$key" in
+			perf_profile)
+				log_err "$key requires Aether core v1.8.0 or newer"
+				return 1
+				;;
+		esac
+	fi
+	if [ -n "$installed_version" ] && ! core_supports_v19 "$installed_version"; then
+		case "$key" in
+			wiw_outer|wiw_inner)
+				log_err "$key requires Aether core v1.9.0 or newer"
 				return 1
 				;;
 		esac
@@ -518,6 +577,18 @@ do_set() {
 						off|no) value=0 ;;
 					esac ;;
 				*) log_err "Invalid value: $value (use 0/1)"; return 1 ;;
+			esac ;;
+		perf_profile)
+			case "$value" in
+				auto) value="" ;;
+				low|medium|high) ;;
+				*) log_err "Invalid perf_profile: $value (use low/medium/high or auto)"; return 1 ;;
+			esac ;;
+		wiw_outer|wiw_inner)
+			case "$value" in
+				auto) value="" ;;
+				*.*:*) ;;
+				*) log_err "Invalid value for $key: $value (use ip:port or auto)"; return 1 ;;
 			esac ;;
 		keepalive|reconnect_secs|validate_secs|startup_secs|watchdog_interval|watchdog_failures|watchdog_startup_grace|watchdog_cooldown)
 			case "$value" in
