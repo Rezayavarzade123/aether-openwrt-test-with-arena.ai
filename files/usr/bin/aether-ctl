@@ -104,9 +104,11 @@ service_pid() {
 }
 
 wait_running() {
+	# Some BusyBox sleep builds reject fractional seconds ("invalid number").
+	# Poll in whole seconds instead; total budget stays 10 s.
 	local i=0
-	while [ $i -lt 20 ] && ! is_running; do
-		sleep 0.5
+	while [ $i -lt 10 ] && ! is_running; do
+		sleep 1
 		i=$((i + 1))
 	done
 	is_running
