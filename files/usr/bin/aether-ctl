@@ -70,6 +70,23 @@ core_supports_v19() {
 		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 9 ] 2>/dev/null; }
 }
 
+# Automatic performance profile from total RAM:
+# <256MB -> low, 256MB-768MB -> medium, >768MB -> high
+select_perf_profile() {
+	local total_kb
+	total_kb="$(awk '/^MemTotal/ {print $2}' /proc/meminfo 2>/dev/null)"
+	case "$total_kb" in
+		''|*[!0-9]*) echo "low"; return ;;
+	esac
+	if [ "$total_kb" -lt 262144 ]; then
+		echo "low"
+	elif [ "$total_kb" -lt 786432 ]; then
+		echo "medium"
+	else
+		echo "high"
+	fi
+}
+
 # Mask credentials embedded in an upstream proxy URL:
 # socks5://user:pass@host:1080 -> socks5://***@host:1080
 redact_url() {
@@ -251,7 +268,7 @@ do_show() {
 		log_key "Log Level" "inactive on core v${installed_version:-unknown}"
 	fi
 	if [ "$supports_v18" -eq 1 ]; then
-		log_key "Perf Profile" "${perf_profile:-auto (by RAM)}"
+		log_key "Perf Profile" "${perf_profile:-low}"
 	else
 		log_key "Perf Profile" "inactive on core v${installed_version:-unknown}"
 	fi
@@ -518,7 +535,7 @@ do_set() {
 		echo "  watchdog_enabled    0/1"
 		echo "  watchdog_interval   seconds"
 		echo "  watchdog_failures   failures before recovery"
-		echo "  perf_profile        low/medium/high (empty = auto by RAM; v1.8+)"
+		echo "  perf_profile        low/medium/high (v1.8+; or use auto-perf)"
 		echo "  wiw_outer           ip:port (gool outer hop, v1.9+; 'auto' clears)"
 		echo "  wiw_inner           ip:port (gool inner hop, v1.9+; 'auto' clears)"
 		return 1
@@ -582,7 +599,10 @@ do_set() {
 			esac ;;
 		perf_profile)
 			case "$value" in
-				auto) value="" ;;
+				auto)
+					value="$(select_perf_profile)"
+					log_info "Auto-detected profile based on RAM: $value"
+					;;
 				low|medium|high) ;;
 				*) log_err "Invalid perf_profile: $value (use low/medium/high or auto)"; return 1 ;;
 			esac ;;
@@ -620,6 +640,30 @@ do_set() {
 		log_info "Set $key = $value"
 	fi
 
+	if is_running; then
+		echo ""
+		log_warn "Aether is running. Changes take effect on next restart."
+		printf "Restart now? [y/N]: "
+		read -r answer
+		case "$answer" in
+			y|Y|yes|YES) do_restart ;;
+		esac
+	fi
+}
+
+do_auto_perf() {
+	local installed_version supports_v18=0
+	installed_version="$(core_version)"
+	[ -n "$installed_version" ] && core_supports_v18 "$installed_version" && supports_v18=1
+	if [ "$supports_v18" -ne 1 ]; then
+		log_err "perf_profile requires Aether core v1.8.0 or newer"
+		return 1
+	fi
+	local prof
+	prof="$(select_perf_profile)"
+	uci_set "perf_profile" "$prof"
+	$UCI commit aether
+	log_info "Detected router RAM: set perf_profile = $prof"
 	if is_running; then
 		echo ""
 		log_warn "Aether is running. Changes take effect on next restart."
@@ -977,6 +1021,7 @@ case "${1:-}" in
 	version)  shift; do_version "$@" ;;
 	change-version) shift; do_change_version "$@" ;;
 	update)   shift; do_update "$@" ;;
+	auto-perf) do_auto_perf ;;
 	*)
 		echo "Aether OpenWrt Controller"
 		echo ""
@@ -997,6 +1042,7 @@ case "${1:-}" in
 		echo "  version [change <tag> [opts]]  Show or change the Aether core version"
 		echo "  change-version <tag> [opts]     Install a core version (v1.5.0+)"
 		echo "  update [opts]                   Download current updater and reinstall"
+		echo "  auto-perf                       Auto-detect router RAM and set recommended perf_profile"
 		echo ""
 		echo "Examples:"
 		echo "  aether-ctl start"
@@ -1009,6 +1055,7 @@ case "${1:-}" in
 		echo "  aether-ctl passwall localhost off"
 		echo "  aether-ctl passwall add-node"
 		echo "  aether-ctl set enabled no"
+		echo "  aether-ctl auto-perf"
 		echo "  aether-ctl change-version v1.5.0 --start"
 		echo "  aether-ctl update --version v1.6.0 --start"
 		;;

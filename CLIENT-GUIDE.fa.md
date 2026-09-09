@@ -113,12 +113,11 @@ aether-ctl passwall add-node          # ساخت تنها نود رسمی: aethe
 
 ## پروفایل عملکرد (هسته v1.8+)
 
-هسته v1.8 پروفایل منابع (`--perf low|medium|high`) را معرفی کرد. کلاینت آن را
-به صورت فیلد **Performance Profile** در LuCI (بخش Advanced) و از طریق
-`aether-ctl set perf_profile low|medium|high|auto` ارائه می‌دهد. وقتی روی
-**Auto (by RAM)** — حالت پیش‌فرض — باشد، سرویس در هر بار شروع، پروفایل را از
-مجموع رم روتر انتخاب می‌کند:
-
+هسته v1.8 پروفایل منابع (`--perf low|medium|high`) را معرفی کرد. در هنگام نصب،
+اسکریپت `install.sh` رم کل روتر را بررسی کرده و مقدار اولیه را در `/etc/config/aether`
+تنظیم می‌کند. کاربران می‌توانند آن را در LuCI (بخش Advanced گزینه **Performance Profile**:
+`Low`، `Medium`، `High`) یا از طریق `aether-ctl set perf_profile low|medium|high`
+تغییر دهند. برای تشخیص خودکار مجدد بر اساس رم، دستور `aether-ctl auto-perf` را اجرا کنید:
 | مجموع رم | پروفایل |
 | --- | --- |
 | کمتر از 256 MB | `low` |
@@ -185,7 +184,8 @@ aether-ctl passwall status            # وضعیت پل Passwall2
 aether-ctl passwall localhost off     # غیرفعال کردن پروکسی لوکال‌هاست Passwall2
 aether-ctl passwall add-node          # ساخت نود socks اشاره‌کننده به Aether
 aether-ctl set protocol wg
-aether-ctl set perf_profile auto       # یا low / medium / high (هسته v1.8+)
+aether-ctl auto-perf                      # تشخیص خودکار رم و تنظیم پروفایل بهینه (هسته v1.8+)
+aether-ctl set perf_profile medium       # یا تنظیم دستی: low / medium / high (هسته v1.8+)
 aether-ctl set wiw_outer 162.159.192.1:2408   # مرحله بیرونی gool (هسته v1.9+)
 aether-ctl set wiw_inner 188.114.96.1:2408    # مرحله درونی gool (هسته v1.9+)
 aether-ctl set upstream_proxy socks5://192.168.1.9:1082

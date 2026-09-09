@@ -32,6 +32,23 @@ success() { printf "${GREEN}[+]${RESET} %s\n" "$*"; }
 warn()    { printf "${YELLOW}[!]${RESET} %s\n" "$*"; }
 error()   { printf "${RED}[-]${RESET} %s\n" "$*" >&2; }
 
+
+# Automatic performance profile from total RAM:
+# <256MB -> low, 256MB-768MB -> medium, >768MB -> high
+select_perf_profile() {
+    local total_kb
+    total_kb="$(awk '/^MemTotal/ {print $2}' /proc/meminfo 2>/dev/null)"
+    case "$total_kb" in
+        ''|*[!0-9]*) echo "low"; return ;;
+    esac
+    if [ "$total_kb" -lt 262144 ]; then
+        echo "low"
+    elif [ "$total_kb" -lt 786432 ]; then
+        echo "medium"
+    else
+        echo "high"
+    fi
+}
 # --- Parse arguments ---
 START_NOW=0
 FORCE_CONFIG=0
@@ -357,8 +374,19 @@ success "Installed /usr/bin/aether"
 
 if [ -f /etc/config/aether ] && [ "$FORCE_CONFIG" -eq 0 ]; then
     warn "Keeping existing /etc/config/aether"
+    existing_perf="$(uci -q get aether.main.perf_profile 2>/dev/null)"
+    if [ -z "$existing_perf" ]; then
+        detected_perf="$(select_perf_profile)"
+        uci set aether.main.perf_profile="$detected_perf" 2>/dev/null &&
+            uci commit aether 2>/dev/null &&
+            info "Initialized perf_profile = $detected_perf (auto-detected from RAM)"
+    fi
 else
     install_staged "etc/config/aether" 600 || exit 1
+    detected_perf="$(select_perf_profile)"
+    uci set aether.main.perf_profile="$detected_perf" 2>/dev/null &&
+        uci commit aether 2>/dev/null &&
+        info "Configured perf_profile = $detected_perf (auto-detected from RAM)"
 fi
 chmod 600 /etc/config/aether || {
     error "Failed to protect /etc/config/aether"

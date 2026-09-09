@@ -946,17 +946,12 @@ return view.extend({
 
 			if (supportsV18) {
 				o = s.option(form.ListValue, 'perf_profile', 'Performance Profile',
-					'Core resource profile. "Auto (by RAM)" picks low/medium/high from total router memory.');
-				o.value('', 'Auto (by RAM)');
-				o.value('low', 'Low (routers / low RAM)');
-				o.value('medium', 'Medium (typical desktop)');
-				o.value('high', 'High (servers)');
-				o.default = '';
+					'Core resource profile.');
+				o.value('low', 'Low');
+				o.value('medium', 'Medium');
+				o.value('high', 'High');
+				o.default = 'low';
 				o.rmempty = false;
-				o.write = function(section_id, formvalue) {
-					uci.set('aether', section_id, 'perf_profile', formvalue || '');
-					return true;
-				};
 			}
 
 			if (supportsV19) {

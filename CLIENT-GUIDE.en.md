@@ -116,12 +116,12 @@ Behavior:
 
 ## Performance Profile (core v1.8+)
 
-Core v1.8 introduced a resource profile (`--perf low|medium|high`). The client
-exposes it as the **Performance Profile** field in LuCI (Advanced section) and
-via `aether-ctl set perf_profile low|medium|high|auto`. When set to **Auto (by
-RAM)** — the default — the service picks the profile from total router memory
-at every start:
-
+Core v1.8 introduced a resource profile (`--perf low|medium|high`). During installation,
+`install.sh` inspects the router's total RAM and sets the initial value in
+`/etc/config/aether`. Operators can adjust it at any time in LuCI (Advanced section
+-> **Performance Profile**: `Low`, `Medium`, `High`) or via
+`aether-ctl set perf_profile low|medium|high`. To re-detect automatically based on RAM,
+run `aether-ctl auto-perf`:
 | Total RAM | Profile |
 | --- | --- |
 | < 256 MB | `low` |
@@ -187,7 +187,8 @@ aether-ctl test google.com
 aether-ctl passwall status            # Passwall2 bridge status
 aether-ctl passwall localhost off     # disable Passwall2 router-local proxying
 aether-ctl set protocol wg
-aether-ctl set perf_profile auto       # or low / medium / high (v1.8+)
+aether-ctl auto-perf                      # auto-detect RAM and set recommended profile (v1.8+)
+aether-ctl set perf_profile medium       # or set explicitly: low / medium / high (v1.8+)
 aether-ctl set wiw_outer 162.159.192.1:2408   # gool outer hop (v1.9+)
 aether-ctl set wiw_inner 188.114.96.1:2408    # gool inner hop (v1.9+)
 aether-ctl passwall add-node          # create a socks node pointing at Aether

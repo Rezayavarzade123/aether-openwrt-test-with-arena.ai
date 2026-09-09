@@ -29,7 +29,7 @@ assert_contains files/usr/bin/aether-ctl 'do_passwall_localhost()'
 assert_contains files/usr/bin/aether-ctl 'do_passwall_add_node()'
 assert_contains files/usr/bin/aether-ctl 'passwall localhost on|off'
 assert_contains files/www/luci-static/resources/view/aether.js 'Passwall2 Integration'
-assert_contains files/etc/config/aether "option perf_profile ''"
+assert_contains files/etc/config/aether "option perf_profile 'low'"
 assert_contains files/etc/config/aether "option wiw_outer ''"
 assert_contains files/etc/config/aether "option wiw_inner ''"
 assert_contains files/www/luci-static/resources/view/aether.js 'Disable Localhost Proxy'
@@ -70,6 +70,8 @@ assert_contains files/usr/bin/aether-ctl 'core_supports_v18()'
 assert_contains files/usr/bin/aether-ctl 'core_supports_v19()'
 assert_contains files/usr/bin/aether-ctl 'perf_profile'
 assert_contains files/usr/bin/aether-ctl 'wiw_outer'
+assert_contains files/usr/bin/aether-ctl 'auto-perf'
+assert_contains install.sh 'select_perf_profile()'
 assert_contains files/www/luci-static/resources/view/aether.js 'aetherCoreSupportsV18'
 assert_contains files/www/luci-static/resources/view/aether.js 'aetherCoreSupportsV19'
 assert_contains files/www/luci-static/resources/view/aether.js 'Performance Profile'

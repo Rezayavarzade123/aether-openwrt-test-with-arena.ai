@@ -141,7 +141,7 @@ start_service() {
 	config_get protocol main protocol 'masque'
 	config_get socks_listen main socks_listen '0.0.0.0:1819'
 	config_get http_proxy main http_proxy ''
-	config_get perf_profile main perf_profile ''
+	config_get perf_profile main perf_profile 'low'
 	config_get wiw_outer main wiw_outer ''
 	config_get wiw_inner main wiw_inner ''
 	config_get upstream_proxy main upstream_proxy ''
