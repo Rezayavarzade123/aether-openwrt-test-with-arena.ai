@@ -118,7 +118,7 @@ capability profile:
 - **Core v1.7.x:** adds upstream proxy chaining (`upstream_proxy` UCI option).
 - **Core v1.8.x:** adds the performance profile (`perf_profile` UCI option;
   auto-detected by `install.sh` or `aether-ctl auto-perf`, editable as `low`/`medium`/`high`).
-  ECH, and TLS groups stay at their core defaults — this client deliberately
+  Routing rules, in-tunnel DNS, ECH, and TLS groups stay at their core defaults — this client deliberately
   does not expose them (traffic splitting is better handled by transparent
   proxy tools such as Passwall2 on the same router).
 - **Core v1.9.x and newer:** adds dual-hop WARP-in-WARP endpoints
