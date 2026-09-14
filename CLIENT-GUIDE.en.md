@@ -26,6 +26,11 @@ proxy should be available only on the router itself.
   Use `balanced`, `aggressive`, `light`, or `off`.
 - **WARP-in-WARP (gool)**: two WireGuard layers. It can work on stricter
   networks, but has more overhead. Start with the `balanced` profile.
+- **MASQUE-in-MASQUE (mim, core v2+)**: two MASQUE hops that can produce a
+  different exit address. It supports automatic discovery or explicit outer /
+  inner endpoints and shares the MASQUE HTTP/2, fragmentation, ECH, and QUIC
+  v2 settings. The two fixed endpoints must be different; MIM also needs a
+  second identity registration and adds another round trip.
 
 The client scans candidate endpoints and validates real data flow before
 exposing SOCKS5. **Quick Reconnect** first verifies the last successful
@@ -42,8 +47,13 @@ endpoint and avoids a full scan when possible.
   `thorough`, `stealth`, and `ironclad` trade time for discovery or validation.
 - **IP Version**: use IPv4 unless the router has working IPv6.
 - **Force Peer**: optionally skip scanning and use a known `ip:port`.
-- **HTTP/2 Mode** and **H2 Peer** apply only to MASQUE.
-- **TLS Fragmentation** applies to MASQUE HTTP/2 when its handshake is blocked.
+- **HTTP/2 Mode** and **H2 Peer** apply to MASQUE and MIM. Use HTTP/2 when
+  UDP/QUIC is blocked.
+- **TLS Fragmentation** applies to MASQUE/MIM HTTP/2 when its handshake is blocked.
+- **QUIC v2 Opener** (core v2+) is enabled by default for MASQUE/MIM HTTP/3;
+  it can be disabled for networks where it causes a problem.
+- **Encrypted Client Hello (ECH)** (core v1.9+) accepts `auto` or a base64
+  configuration. Leave it empty to preserve the core default.
 - **HTTP CONNECT Proxy** optionally exposes the same tunnel for applications
   that do not support SOCKS5.
 - **Upstream Proxy** (requires core v1.7+) chains the tunnel behind another
@@ -51,14 +61,14 @@ endpoint and avoids a full scan when possible.
   bare `host:port` (read as SOCKS5). A SOCKS5 upstream carries every
   transport; an HTTP CONNECT upstream requires HTTP/2 mode. The URL is passed
   to the core via `--upstream`, and credentials are redacted in `aether-ctl show`.
-- **MASQUE Startup Deadline** bounds connection and first data validation;
-  its default is 30 seconds.
-- **Disable Profile Retry** applies to WireGuard/gool and prevents retrying
+- **MASQUE Startup Deadline** bounds connection and first data validation for
+  MASQUE/MIM; its default is 30 seconds.
+- **Disable Profile Retry** applies to WireGuard/gool/MIM and prevents retrying
   alternate noise profiles after a failed scan.
 
 ### Reliability settings
 
-- **Keepalive** applies to WireGuard and gool.
+- **Keepalive** applies to WireGuard, gool, and MIM.
 - **Reconnect Delay** controls the core retry delay.
 - **Validation Timeout** controls the data-plane validation wait.
 - **Quick Reconnect** rechecks the cached endpoint before scanning.
@@ -149,14 +159,10 @@ Peak memory scales with the profile, not the protocol; idle RSS is ~5.6–7.1 MB
 across the board. The thresholds above leave headroom below the measured peaks
 for routers with less RAM.
 
-Two other v1.8 core features — **routing rules** (`--route-block`,
-`--route-direct`) and **TLS key-share groups** (`--tls-groups`) — are
-deliberately not exposed by this client: transparent-proxy tools such as
-Passwall2 on the same router split traffic better than in-tunnel rules, and
-the default TLS groups match modern browsers. In-tunnel DNS and ECH also stay
-at their core defaults. The client passes no `--ech` flag either — the core's
-own default applies; the core docs only document the explicit `--ech auto`
-mode.
+Routing rules (`--route-block`, `--route-direct`), custom in-tunnel DNS,
+firewall marks, and TLS key-share groups remain deliberately unexposed by this
+client. Transparent-proxy tools such as Passwall2 handle traffic splitting
+better on this router; the remaining controls retain their core defaults.
 
 ## Dual-Hop gool Endpoints (core v1.9+)
 
@@ -174,6 +180,76 @@ Set one hop and the core scans only for the other; set both and no scan runs.
 `auto` (or an empty value) restores the default behaviour where the core scans
 both hops. A named hop is retried on reconnect instead of being replaced.
 
+## MASQUE-in-MASQUE, QUIC v2, and Tor (core v2+)
+
+Core v2 adds `mim`, a second MASQUE tunnel inside the first. Set `mim_outer`,
+`mim_inner`, or `mim_peers` when you need fixed endpoints; otherwise the core
+selects them. `quic_v2` is enabled by default and maps to `--no-quic-v2` only
+when disabled.
+
+Tor is available through `tor_mode`:
+
+- `tunnel` keeps the normal WARP SOCKS5 listener and adds a Tor listener; Tor
+  traffic travels through WARP.
+- `reverse` reaches MASQUE through Tor and leaves through WARP; it requires
+  MASQUE and HTTP/2.
+- `only` serves Tor from the main SOCKS5 listener and does not establish WARP.
+
+The control appears only on Core v2; it requires a Core package built with Tor
+support and any required pluggable transports. The client gates the controls by
+version, not by inspecting whether the installed Core package has that build
+feature. `reverse` additionally requires the MASQUE protocol — the CLI rejects
+it against other protocols in both directions at set time.
+
+The Status panel shows the configured `Tor` state (`Enabled at <bind>`,
+`Disabled`, or `Needs core v2.0+`); it is not proof that Tor has bootstrapped.
+A **Check Tor IP** button verifies the exit
+(`Tor ✓ <ip> — <ms>ms`) via `https://check.torproject.org/api/ip`. The same
+check exists on the CLI:
+
+```sh
+aether-ctl check-tor        # Tor exit IP and IsTor status (alias: tor-ip)
+```
+
+`tor_bind` (default `127.0.0.1:1820`) and `tor_dir` tune the listener and
+state directory; `tor_bridges` (`auto`/`on`/`off`) controls bridge fallback
+for blocked networks. The CLI check is bounded (8s connect / 22s max) so the
+LuCI button stays under the ubus RPC timeout — slow circuits report `FAILED`,
+never a transport error. In manual command mode without `--tor` in the
+arguments, `check-tor` refuses instantly instead of timing out.
+
+If the Tor listener accepts connections but bootstrap never completes, look
+for `problem with filesystem permissions` in `logread -e aether`: Arti
+refuses state whose ancestor directories are not root-owned or are
+group/world-writable (stock OpenWrt images and tar overlays both break this).
+The service repairs `/` and `/etc` automatically on every Tor-enabled start.
+
+## Custom Command Line
+
+The **Custom Command** section (last on the LuCI page) hands you the core
+command line. In **Generated** mode (default) it shows the current command
+reported by procd, read-only. Refresh the page after a restart to see the new
+generated command. In **Manual** mode a large text box accepts your own
+arguments:
+
+- space-separated, no quotes or shell features;
+- a leading `/usr/bin/aether` or `/usr/bin/aether-run` is stripped
+  automatically, so pasting the whole shown command works;
+- empty input falls back to generated flags with a log line;
+- still launched through `aether-run`, so Zero Trust secrets stay in the
+  environment and out of process listings;
+- applies on restart and is remembered in UCI (`command_mode`,
+  `custom_command`; `auto` clears the latter on the CLI).
+
+Manual mode bypasses **every** UCI option — protocol, Tor, binds, everything.
+The `test`, `check-ip`, and `check-tor` probes read the manual binds instead
+(`check-tor` refuses immediately when `--tor` is absent rather than timing
+out). The CLI validates `set` values up front (`tor_bind` as `ip:port`,
+`tor_dir` as an absolute path, `reverse` only with MASQUE) and `status`/`show`
+show
+the effective obfuscation profile, e.g. `balanced (stored firewall)` when the
+stored value is remapped for the protocol family.
+
 ## CLI
 
 ```sh
@@ -184,6 +260,8 @@ aether-ctl status
 aether-ctl show
 aether-ctl log 100
 aether-ctl test google.com
+aether-ctl check-ip                     # public IP, country, latency
+aether-ctl check-tor                    # Tor exit IP and IsTor status (v2+ Tor modes)
 aether-ctl passwall status            # Passwall2 bridge status
 aether-ctl passwall localhost off     # disable Passwall2 router-local proxying
 aether-ctl set protocol wg
@@ -191,6 +269,12 @@ aether-ctl auto-perf                      # auto-detect RAM and set recommended 
 aether-ctl set perf_profile medium       # or set explicitly: low / medium / high (v1.8+)
 aether-ctl set wiw_outer 162.159.192.1:2408   # gool outer hop (v1.9+)
 aether-ctl set wiw_inner 188.114.96.1:2408    # gool inner hop (v1.9+)
+aether-ctl set protocol mim                     # MASQUE-in-MASQUE (v2+)
+aether-ctl set quic_v2 off                      # disable v2 QUIC opener (v2+)
+aether-ctl set ech auto                         # enable ECH discovery (v1.9+)
+aether-ctl set tor_mode tunnel                  # Tor through WARP (v2+)
+aether-ctl set command_mode manual               # custom core arguments
+aether-ctl set custom_command '--bind 0.0.0.0:1819 --wg'  # space-separated
 aether-ctl passwall add-node          # create a socks node pointing at Aether
 aether-ctl set upstream_proxy socks5://192.168.1.9:1082
 aether-ctl update
@@ -221,7 +305,7 @@ chmod +x /tmp/aether-install.sh
 ```
 
 The installer lists up to five newest stable core releases from v1.5.0 onward
-and defaults to v1.7.0. For automation use `--non-interactive`; add
+and defaults to v2.0.0. For automation use `--non-interactive`; add
 `--version vX.Y.Z` to choose a valid published release from v1.5.0 onward.
 `aether-ctl update` fetches the latest repository updater and runs the same
 installer flow; `aether-ctl change-version vX.Y.Z` is the explicit shortcut for
@@ -258,6 +342,24 @@ Use `--purge` only when you also want to delete `/etc/config/aether` and
 - Check service state: `aether-ctl status`.
 - Read recent logs: `aether-ctl log 100`.
 - Test through the tunnel: `aether-ctl test google.com`.
+- Check the exit: `aether-ctl check-ip`; for Tor: `aether-ctl check-tor`.
 - If the service is running but traffic fails, wait for the watchdog or use
   `aether-ctl restart`.
+- Tor listening on `:1820` but never connecting: look for `problem with
+  filesystem permissions` in the log. The service self-repairs `/` and
+  `/etc` ownership/modes on Tor-enabled starts; then Tor still needs minutes
+  to bootstrap (longer over multi-hop tunnels).
+- Manual command mode: the core runs exactly your arguments — a missing
+  `--tor` means no Tor even with `tor_mode=tunnel` set, and a pasted binary
+  path is stripped, not duplicated. Pasting the full shown command used to
+  crash-loop the core (fixed: leading `/usr/bin/aether(-run)` is dropped).
+- `aether-ctl test <host>` printing the help page means the installed
+  `aether-ctl` predates the `test` dispatch (update the client files); the
+  tunnel itself is unaffected — `check-ip` still proves it.
+- Deploying the `files/` overlay as root resets `/` and `/etc` to the
+  archived mode (Windows tars store `0777`), which re-breaks Tor's
+  permission check — restart the service afterwards so the self-repair runs.
+- A blank LuCI page with `TypeError: Class must be a descendant of
+  CBIAbstractValue` means a cached page referencing a widget your form.js
+  lacks — hard-refresh (`Ctrl+F5`).
 - If LuCI is stale, use a private window or a fresh browser before reinstalling.

@@ -25,6 +25,11 @@ Aether یک پراکسی محلی SOCKS5 ایجاد می‌کند و ترافی�
   پروفایل‌های آن `balanced`، `aggressive`، `light` و `off` هستند.
 - **WARP-in-WARP (gool)**: دو لایه WireGuard دارد و ممکن است در شبکه‌های سخت‌گیر
   بهتر کار کند، اما سربار بیشتری دارد. از `balanced` شروع کنید.
+- **MASQUE-in-MASQUE (mim، هسته v2+)**: دو مرحله MASQUE دارد و می‌تواند IP خروجی
+  متفاوتی بسازد. از کشف خودکار یا endpoint بیرونی/درونی صریح پشتیبانی می‌کند و
+  تنظیمات HTTP/2، fragmentation، ECH و QUIC v2 مربوط به MASQUE را به اشتراک
+  می‌گذارد. دو endpoint ثابت باید متفاوت باشند؛ MIM به ثبت هویت دوم و یک رفت‌وبرگشت
+  اضافه نیز نیاز دارد.
 
 کلاینت endpointها را اسکن کرده و قبل از باز کردن SOCKS5، عبور واقعی داده را
 بررسی می‌کند. گزینه **Quick Reconnect** ابتدا endpoint موفق قبلی را بررسی
@@ -41,8 +46,13 @@ Aether یک پراکسی محلی SOCKS5 ایجاد می‌کند و ترافی�
   صرف می‌کنند.
 - **IP Version**: اگر IPv6 روی روتر فعال و سالم نیست، IPv4 را انتخاب کنید.
 - **Force Peer**: با وارد کردن `ip:port` اسکن را رد می‌کند.
-- **HTTP/2 Mode** و **H2 Peer** فقط برای MASQUE هستند.
-- **TLS Fragmentation** برای MASQUE روی HTTP/2 و در صورت مسدود بودن handshake است.
+- **HTTP/2 Mode** و **H2 Peer** برای MASQUE و MIM هستند. وقتی UDP/QUIC مسدود است
+  از HTTP/2 استفاده کنید.
+- **TLS Fragmentation** برای MASQUE/MIM روی HTTP/2 و در صورت مسدود بودن handshake است.
+- **QUIC v2 Opener** (هسته v2+) به‌صورت پیش‌فرض برای MASQUE/MIM روی HTTP/3 فعال
+  است؛ فقط وقتی با شبکه شما ناسازگار است آن را غیرفعال کنید.
+- **Encrypted Client Hello (ECH)** (هسته v1.9+) مقدار `auto` یا پیکربندی base64
+  می‌پذیرد. برای حفظ پیش‌فرض هسته آن را خالی بگذارید.
 - **HTTP CONNECT Proxy** به‌صورت اختیاری همان تونل را برای برنامه‌های بدون SOCKS5
   فراهم می‌کند.
 - **Upstream Proxy** (نیازمند هسته v1.7+) تونل را پشت یک پروکسی دیگر زنجیر
@@ -51,12 +61,14 @@ Aether یک پراکسی محلی SOCKS5 ایجاد می‌کند و ترافی�
   همه transportها را پشتیبانی می‌کند؛ پروکسی HTTP CONNECT به حالت HTTP/2 نیاز
   دارد. این مقدار مستقیماً از طریق پرچم `--upstream` به هسته داده می‌شود و در
   `aether-ctl show` مخفی (redact) نمایش داده می‌شود.
-- **MASQUE Startup Deadline** برای اتصال و اولین اعتبارسنجی داده محدودیت زمانی
-  می‌گذارد و مقدار پیش‌فرض آن ۳۰ ثانیه است.
+- **MASQUE Startup Deadline** برای اتصال و اولین اعتبارسنجی داده در MASQUE/MIM
+  محدودیت زمانی می‌گذارد و مقدار پیش‌فرض آن ۳۰ ثانیه است.
+- **Disable Profile Retry** برای WireGuard/gool/MIM است و تلاش دوباره با پروفایل
+  noise دیگر را پس از اسکن ناموفق متوقف می‌کند.
 
 ### تنظیمات پایداری
 
-- **Keepalive** برای WireGuard و gool استفاده می‌شود.
+- **Keepalive** برای WireGuard، gool و MIM استفاده می‌شود.
 - **Reconnect Delay** فاصله تلاش مجدد هسته را تعیین می‌کند.
 - **Validation Timeout** زمان انتظار اعتبارسنجی مسیر داده است.
 - **Quick Reconnect** endpoint ذخیره‌شده را قبل از اسکن دوباره بررسی می‌کند.
@@ -145,13 +157,10 @@ aether-ctl passwall add-node          # ساخت تنها نود رسمی: aethe
 حالت‌ها حدود 5.6 تا 7.1 مگابایت است. آستانه‌های بالا برای روترهای با رم کمتر،
 حاشیه امن کافی دارند.
 
-دو قابلیت دیگر هسته v1.8 — **قوانین مسیریابی** (`--route-block`،
-`--route-direct`) و **گروه‌های TLS key-share** (`--tls-groups`) — عمداً توسط
-این کلاینت ارائه نمی‌شوند: ابزارهای پروکسی شفاف مانند Passwall2 روی همان روتر
-تقسیم ترافیک را بهتر انجام می‌دهند و گروه‌های پیش‌فرض TLS منطبق با مرورگرهای
-مدرن است. DNS درون‌تونل و ECH نیز در پیش‌فرض خود هسته باقی می‌مانند؛ کلاینت
-پرچم `--ech` را ارسال نمی‌کند و پیش‌فرض خود هسته اعمال می‌شود (مستندات هسته
-فقط حالت صریح `--ech auto` را توضیح می‌دهد).
+قوانین مسیریابی (`--route-block`، `--route-direct`)، DNS سفارشی درون‌تونل،
+firewall mark و گروه‌های TLS key-share عمداً توسط این کلاینت ارائه نمی‌شوند.
+ابزارهای پروکسی شفاف مانند Passwall2 روی همان روتر تقسیم ترافیک را بهتر انجام
+می‌دهند و باقی کنترل‌ها روی پیش‌فرض هسته می‌مانند.
 
 ## endpointهای gool دو مرحله‌ای (هسته v1.9+)
 
@@ -170,6 +179,70 @@ aether-ctl set wiw_outer auto   # بازگشت به اسکن خودکار
 مرحله را برمی‌گرداند. مرحله‌ای که دستی تعیین شده در اتصال مجدد دوباره تلاش
 می‌شود و با نود اسکن‌شده جایگزین نمی‌گردد.
 
+## MASQUE-in-MASQUE، QUIC v2 و Tor (هسته v2+)
+
+هسته v2 پروتکل `mim`، یعنی یک تونل MASQUE داخل تونل MASQUE دیگر، را اضافه می‌کند.
+در صورت نیاز endpointهای ثابت را با `mim_outer`، `mim_inner` یا `mim_peers`
+تنظیم کنید؛ در غیر این صورت هسته آن‌ها را انتخاب می‌کند. `quic_v2` به‌صورت
+پیش‌فرض فعال است و فقط هنگام غیرفعال شدن به `--no-quic-v2` تبدیل می‌شود.
+
+Tor با `tor_mode` در دسترس است:
+
+- `tunnel` شنونده SOCKS5 معمول WARP را نگه می‌دارد و یک شنونده Tor اضافه می‌کند؛
+  ترافیک Tor از WARP عبور می‌کند.
+- `reverse` به MASQUE از مسیر Tor می‌رسد و با WARP خارج می‌شود؛ به MASQUE و
+  HTTP/2 نیاز دارد.
+- `only` Tor را روی شنونده SOCKS5 اصلی ارائه می‌کند و تونل WARP برقرار نمی‌شود.
+
+این کنترل‌ها فقط در هسته v2 ظاهر می‌شوند و به بسته هسته‌ای نیاز دارند که با
+قابلیت Tor و transportهای افزونه لازم ساخته شده باشد. کلاینت کنترل‌ها را بر پایه
+نسخه نمایش می‌دهد و وجود قابلیت Tor در build نصب‌شده را از پیش بررسی نمی‌کند.
+`reverse` فقط با پروتکل MASQUE مجاز است و CLI تغییر ناسازگار را در هر دو جهت رد
+می‌کند.
+
+پنل Status وضعیت پیکربندی‌شده `Tor` را نشان می‌دهد (`Enabled at <bind>`،
+`Disabled` یا `Needs core v2.0+`)؛ این وضعیت به‌تنهایی نشانه bootstrap موفق Tor
+نیست. دکمه **Check Tor IP** خروجی واقعی را از طریق
+`https://check.torproject.org/api/ip` بررسی می‌کند. معادل CLI آن:
+
+```sh
+aether-ctl check-tor        # IP خروجی و وضعیت IsTor (نام مستعار: tor-ip)
+```
+
+`tor_bind` (پیش‌فرض `127.0.0.1:1820`) و `tor_dir` شنونده و دایرکتوری state را
+تنظیم می‌کنند؛ `tor_bridges` با مقدارهای `auto`/`on`/`off` fallback پل‌ها را برای
+شبکه‌های مسدود کنترل می‌کند. بررسی CLI محدود به ۸ ثانیه اتصال و ۲۲ ثانیه کل است؛
+بنابراین مدارهای کند `FAILED` می‌دهند، نه خطای transport در LuCI. در حالت فرمان
+دستی، اگر آرگومان‌ها `--tor` نداشته باشند، `check-tor` فوری رد می‌شود.
+
+اگر شنونده Tor اتصال می‌پذیرد اما bootstrap تمام نمی‌شود، در
+`logread -e aether` دنبال `problem with filesystem permissions` بگردید. Arti
+state را وقتی والدهای آن root-owned نباشند یا برای گروه/دیگران قابل نوشتن باشند
+رد می‌کند. سرویس هنگام هر شروع Tor، مالکیت و modeهای `/` و `/etc` را ترمیم می‌کند.
+
+## خط فرمان سفارشی
+
+بخش **Custom Command** (آخرین بخش صفحه LuCI) خط فرمان هسته را در اختیار شما
+می‌گذارد. در حالت **Generated** (پیش‌فرض)، فرمان فعلی گزارش‌شده توسط procd فقط
+خواندنی است. برای دیدن فرمان تولیدشده جدید، پس از restart صفحه را تازه‌سازی کنید.
+در حالت **Manual**، یک کادر بزرگ آرگومان‌های خودتان را می‌پذیرد:
+
+- آرگومان‌ها با فاصله جدا شوند؛ از نقل‌قول و قابلیت‌های shell استفاده نکنید؛
+- ابتدای `/usr/bin/aether` یا `/usr/bin/aether-run` خودکار حذف می‌شود تا بتوانید
+  کل فرمان نمایش‌داده‌شده را paste کنید؛
+- ورودی خالی با ثبت لاگ به پرچم‌های تولیدشده برمی‌گردد؛
+- اجرا همچنان از طریق `aether-run` است؛ پس secretهای Zero Trust در environment
+  باقی می‌مانند و در فهرست پردازه‌ها نمی‌آیند؛
+- تغییر پس از restart اعمال و در UCI با `command_mode` و `custom_command` ذخیره
+  می‌شود؛ `auto` مقدار دوم را در CLI پاک می‌کند.
+
+حالت Manual همه گزینه‌های UCI، از جمله پروتکل، Tor و bindها را دور می‌زند.
+`test`، `check-ip` و `check-tor` به‌جای UCI، bindهای فرمان دستی را می‌خوانند.
+CLI مقدارها را پیش از ذخیره اعتبارسنجی می‌کند (`tor_bind` به شکل `ip:port`،
+`tor_dir` مسیر مطلق، و `reverse` فقط با MASQUE) و `status`/`show` پروفایل
+obfuscation مؤثر را نشان می‌دهند؛ مثلاً `balanced (stored firewall)` وقتی مقدار
+ذخیره‌شده برای خانواده پروتکل remap شده است.
+
 ## دستورات CLI
 
 ```sh
@@ -180,6 +253,8 @@ aether-ctl status
 aether-ctl show
 aether-ctl log 100
 aether-ctl test google.com
+aether-ctl check-ip                     # IP عمومی، کشور و تأخیر
+aether-ctl check-tor                    # IP خروجی Tor و IsTor (حالت‌های Tor در v2+)
 aether-ctl passwall status            # وضعیت پل Passwall2
 aether-ctl passwall localhost off     # غیرفعال کردن پروکسی لوکال‌هاست Passwall2
 aether-ctl passwall add-node          # ساخت نود socks اشاره‌کننده به Aether
@@ -188,6 +263,12 @@ aether-ctl auto-perf                      # تشخیص خودکار رم و تن
 aether-ctl set perf_profile medium       # یا تنظیم دستی: low / medium / high (هسته v1.8+)
 aether-ctl set wiw_outer 162.159.192.1:2408   # مرحله بیرونی gool (هسته v1.9+)
 aether-ctl set wiw_inner 188.114.96.1:2408    # مرحله درونی gool (هسته v1.9+)
+aether-ctl set protocol mim                     # MASQUE-in-MASQUE (هسته v2+)
+aether-ctl set quic_v2 off                      # غیرفعال‌سازی opener QUIC v2 (هسته v2+)
+aether-ctl set ech auto                         # فعال‌سازی کشف ECH (هسته v1.9+)
+aether-ctl set tor_mode tunnel                  # Tor از طریق WARP (هسته v2+)
+aether-ctl set command_mode manual               # آرگومان‌های سفارشی هسته
+aether-ctl set custom_command '--bind 0.0.0.0:1819 --wg'  # آرگومان‌های جداشده با فاصله
 aether-ctl set upstream_proxy socks5://192.168.1.9:1082
 aether-ctl update
 aether-ctl change-version v1.5.0 --start
@@ -217,7 +298,7 @@ chmod +x /tmp/aether-install.sh
 ```
 
 نصب‌کننده حداکثر پنج نسخه پایدار هسته از v1.5.0 به بعد را نمایش می‌دهد و
-پیش‌فرض آن v1.7.0 است. برای automation از `--non-interactive` استفاده کنید و
+پیش‌فرض آن v2.0.0 است. برای automation از `--non-interactive` استفاده کنید و
 برای نسخه مشخص v1.5.0 به بعد `--version vX.Y.Z` را بدهید. دستور
 `aether-ctl update` آخرین updater ریپو را دریافت کرده و همین فرآیند نصب را
 اجرا می‌کند؛ `aether-ctl change-version vX.Y.Z` میانبر مشخص برای تغییر نسخه
@@ -254,6 +335,22 @@ chmod +x /tmp/aether-uninstall.sh
 - وضعیت سرویس: `aether-ctl status`
 - لاگ‌های اخیر: `aether-ctl log 100`
 - تست از داخل تونل: `aether-ctl test google.com`
+- بررسی خروجی: `aether-ctl check-ip`؛ برای Tor: `aether-ctl check-tor`
 - اگر سرویس روشن است ولی ترافیک عبور نمی‌کند، کمی برای watchdog صبر کنید یا
   `aether-ctl restart` را اجرا کنید.
+- اگر Tor روی `:1820` گوش می‌دهد اما وصل نمی‌شود، در لاگ دنبال
+  `problem with filesystem permissions` بگردید. سرویس در شروع Tor مالکیت و mode
+  `/` و `/etc` را ترمیم می‌کند؛ bootstrap Tor، به‌خصوص روی تونل چندمرحله‌ای، ممکن
+  است چند دقیقه طول بکشد.
+- در حالت فرمان دستی، هسته دقیقاً آرگومان‌های شما را اجرا می‌کند؛ نبودن `--tor`
+  یعنی حتی با `tor_mode=tunnel` نیز Tor اجرا نمی‌شود. مسیر باینری در ابتدای
+  فرمان paste‌شده حذف می‌شود تا دوبار ارسال نشود.
+- اگر `aether-ctl test <host>` صفحه راهنما را چاپ می‌کند، `aether-ctl` نصب‌شده
+  قدیمی و فاقد dispatch مربوط به `test` است؛ فایل‌های کلاینت را به‌روزرسانی کنید.
+- استقرار overlay پوشه `files/` با root می‌تواند modeهای `/` و `/etc` را از tar
+  بازنویسی کند (tarهای ویندوز ممکن است `0777` ذخیره کنند). سپس سرویس را restart
+  کنید تا ترمیم Tor اجرا شود.
+- صفحه خالی LuCI همراه با `TypeError: Class must be a descendant of
+  CBIAbstractValue` معمولاً یعنی صفحه cache شده به widgetی اشاره می‌کند که در
+  `form.js` وجود ندارد؛ با `Ctrl+F5` hard refresh کنید.
 - اگر LuCI قدیمی است، ابتدا پنجره private یا مرورگر جدید را امتحان کنید.
