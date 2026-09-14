@@ -4,7 +4,7 @@
 
 # Aether OpenWrt Client
 
-**نسخه کلاینت: v0.5.1**
+**نسخه کلاینت: v0.8.0**
 
 اینتگریشن OpenWrt برای [Aether](https://github.com/CluvexStudio/Aether) — یک کلاینت دور زدن سانسور.
 
@@ -26,7 +26,7 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 در حین نصب از شما پرسیده می‌شود:
 
 - **نسخه هسته Aether**: حداکثر پنج ریلیز پایدار از v1.5.0 به بعد نمایش داده
-  می‌شود. با Enter نسخه پیش‌فرض v1.7.0 انتخاب می‌شود؛ می‌توانید یک گزینه یا
+  می‌شود. با Enter نسخه پیش‌فرض v2.0.0 انتخاب می‌شود؛ می‌توانید یک گزینه یا
   نسخه معتبر v1.5.0 به بعد را وارد کنید.
 - **curl نصب شود؟** به صورت پیش‌فرض **بله**. curl برای تست اتصال در LuCI و
   watchdog بازیابی تونل لازم است. با `--no-curl` از آن صرف‌نظر کنید؛ تونل کار
@@ -42,19 +42,22 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 
 ## قابلیت‌ها
 
-- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip`، `aether-ctl change-version <vX.Y.Z>` و `aether-ctl passwall <status|localhost <on|off>|add-node>`
+- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip|check-tor` (با نام مستعار `tor-ip` و خروجی `Tor: true|false IP:`)، `aether-ctl change-version <vX.Y.Z>`، `aether-ctl passwall <…>`، گزینه‌های عملکرد/gool و تنظیمات MIM، QUIC v2، ECH و Tor در v2. `set` مقدارها را اعتبارسنجی می‌کند (`tor_bind` به شکل `ip:port`، `tor_dir` مطلق، و `reverse` فقط با MASQUE)؛ `status` و `show` تنظیم مؤثر را نیز نشان می‌دهند؛ مثلاً `balanced (stored firewall)`.
 - **LuCI**: Services -> Aether
-  - جدول وضعیت (وضعیت، نسخه، endpoint، transport، آدرس SOCKS5)
+  - جدول وضعیت (وضعیت، نسخه، endpoint، transport، آدرس SOCKS5 و وضعیت پیکربندی Tor)
   - دکمه‌های Start / Stop / Restart
-  - دکمه‌های تست اتصال با زمان‌بندی دقیق میلی‌ثانیه و بررسی IP عمومی و کشور
+  - دکمه‌های تست اتصال با زمان‌بندی دقیق میلی‌ثانیه، بررسی IP عمومی و کشور و بررسی خروجی Tor (هنگام فعال بودن Tor)
   - لاگ‌های زنده بلادرنگ (به‌روزرسانی خودکار، توقف/ادامه، اسکرول خودکار)
   - یکپارچگی Passwall2 (زیر بخش Advanced): هشدار در صورت پروکسی شدن ترافیک خود روتر توسط Passwall2، غیرفعال‌سازی با یک کلیک و ساخت با یک کلیک نود socks اشاره‌کننده به Aether
   - پیکربندی کامل (پروتکل، حالت اسکن، obfuscation، HTTP/2 و غیره)
+  - بخش Custom Command: خط فرمان تولیدشده/دستی هسته با پیش‌نمایش فرمان فعلی procd
 - **سرویس**: ادغام procd، شروع خودکار هنگام بوت
 - **watchdog بازیابی**: مسیر واقعی SOCKS5 را بررسی می‌کند و در صورت گیر کردن
   هسته، پس از چند خطای متوالی آن را بازیابی می‌کند
 - **زنجیره پروکسی بالادستی** (هسته v1.7+): خروج از طریق یک پروکسی دیگر
   SOCKS5/HTTP پیش از رسیدن به Cloudflare (از طریق پرچم `--upstream`)
+- **ECH** (هسته v1.9+): پیکربندی اختیاری Encrypted ClientHello
+- **هسته v2**: MASQUE-in-MASQUE، کنترل انتخابی QUIC v2 و حالت‌های Tor برای بسته‌های هسته دارای Tor
 - **Zero Trust**: اتصال headless به سازمان با Access service token
 - **معماری**: x86_64، arm64، armv7 (باینری‌های استاتیک musl)
 
@@ -66,7 +69,7 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 /tmp/aether-install.sh --force-config  # بازنویسی کانفیگ موجود
 /tmp/aether-install.sh --no-curl       # رد شدن از پرامپت نصب curl
 /tmp/aether-install.sh --version v1.5.0 --start
-/tmp/aether-install.sh --non-interactive --start  # نسخه v1.7.0 بدون پرامپت
+/tmp/aether-install.sh --non-interactive --start  # نسخه v2.0.0 بدون پرامپت
 ```
 
 ## حذف نصب
@@ -87,16 +90,19 @@ aether-ctl restart
 aether-ctl status
 aether-ctl show
 aether-ctl log              # نمایش لاگ‌های اخیر
-aether-ctl log 100          # نمایش 100 خط آخر
 aether-ctl test google.com  # تست اتصال از طریق تونل (نیاز به curl)
 aether-ctl check-ip         # بررسی IP عمومی، کشور و پینگ (ipwho.is)
+aether-ctl check-tor        # بررسی IP خروجی Tor و IsTor (هسته v2.0.0+ با یکی از حالت‌های Tor)
 aether-ctl passwall status            # نمایش وضعیت Passwall2 و نودهای مرتبط
 aether-ctl passwall localhost off     # توقف پروکسی ترافیک خود روتر توسط Passwall2
 aether-ctl passwall add-node          # ساخت نود socks اشاره‌کننده به Aether
 aether-ctl version
-aether-ctl update
+aether-ctl update                       # دریافت updater جدید کلاینت؛ پیش‌فرض هسته v2.0.0 باقی می‌ماند
 aether-ctl change-version v1.5.0 --start
 aether-ctl update --version v1.5.0 --start
+aether-ctl set tor_mode tunnel            # Tor از طریق WARP (نیازمند بسته Tor در v2.0.0+)
+aether-ctl set command_mode manual        # استفاده از آرگومان‌های دلخواه هسته
+aether-ctl set custom_command '--bind 0.0.0.0:1819 --wg'  # آرگومان‌های جداشده با فاصله
 ```
 
 ## به‌روزرسانی
@@ -105,12 +111,21 @@ aether-ctl update --version v1.5.0 --start
 دوباره اجرا می‌کند. کانفیگ `/etc/config/aether` و هویت‌های معتبر `/etc/aether`
 حفظ می‌شوند، مگر این‌که `--force-config` داده شود. فایل هسته همیشه با SHA-256
 ریلیز رسمی بررسی می‌شود. کلاینت از هسته v1.5.0 و جدیدتر پشتیبانی می‌کند و
-پیش‌فرض آن v1.7.0 است. پیش از شروع سرویس و پیش از رندر رابط LuCI، نسخه هسته
+پیش‌فرض آن v2.0.0 است. پیش از شروع سرویس و پیش از رندر رابط LuCI، نسخه هسته
 تشخیص داده می‌شود. در v1.5، گزینه‌های مخصوص v1.6 شامل HTTP CONNECT proxy،
 MASQUE startup deadline و کنترل سطح لاگ نمایش داده نشده و به هسته ارسال
-نمی‌شوند. نسخه‌های v1.6 پروفایل قابلیت v1.6 را دارند و نسخه‌های v1.7 و
-جدیدتر علاوه بر آن، زنجیره پروکسی بالادستی (گزینه UCI `upstream_proxy`) را
-هم پشتیبانی می‌کنند.
+نمی‌شوند. نسخه‌های v1.6 پروفایل قابلیت v1.6 را دارند و نسخه‌های v1.7 زنجیره
+پروکسی بالادستی (گزینه UCI `upstream_proxy`) را پشتیبانی می‌کنند. نسخه‌های
+v1.8 پروفایل عملکرد را اضافه می‌کنند (گزینه UCI `perf_profile`؛ تشخیص خودکار توسط
+`install.sh` یا `aether-ctl auto-perf` و قابل انتخاب به صورت `low`/`medium`/`high`).
+قوانین مسیریابی، DNS درون‌تونل، firewall mark و کنترل‌های منابع عمداً توسط این
+کلاینت ارائه نمی‌شوند (تقسیم ترافیک توسط Passwall2 بهتر انجام می‌شود).
+نسخه‌های v1.9 به بعد endpointهای دو مرحله‌ای gool را اضافه می‌کنند (گزینه‌های
+UCI `wiw_outer` و `wiw_inner`؛ خالی = اسکن هر دو مرحله توسط هسته).
+هسته v2.0.0 و جدیدتر MASQUE-in-MASQUE (`mim` با endpointهای `mim_*`)، کنترل
+انتخابی QUIC v2 و کنترل‌های Tor را اضافه می‌کند. Tor به بسته‌ای از هسته نیاز دارد
+که با قابلیت Tor کامپایل شده باشد؛ کلاینت کنترل‌ها را بر اساس نسخه هسته نمایش
+می‌دهد، اما این قابلیت build را از پیش تشخیص نمی‌دهد.
 
 ## رابط وب LuCI
 
@@ -119,14 +134,16 @@ MASQUE startup deadline و کنترل سطح لاگ نمایش داده نشده
 ![رابط وب LuCI](screenshots/luci.png)
 
 قابلیت‌ها:
-- جدول وضعیت (وضعیت، نسخه، endpoint، transport)
+- جدول وضعیت (وضعیت، نسخه، endpoint، transport و وضعیت پیکربندی Tor)
 - دکمه‌های Start / Stop / Restart
-- دکمه‌های تست اتصال (google.com، youtube.com، github.com، telegram.org) با زمان دقیق ms
+- دکمه‌های تست اتصال (google.com، youtube.com، github.com، telegram.org) با زمان دقیق ms، بررسی IP عمومی و بررسی خروجی Tor
+- بخش Custom Command (پیش‌نمایش فرمان تولیدشده فعلی / آرگومان‌های دستی هسته)
 - لاگ‌های زنده بلادرنگ (به‌روزرسانی خودکار هر 2 ثانیه، بدون نیاز به رفرش دستی)
 - توقف/ادامه استریم لاگ
 - تاگل اسکرول خودکار
 - دکمه پاک کردن لاگ‌ها
 - بخش Passwall2 Integration (زیر تنظیمات Advanced) برای اتصال شفاف کل شبکه از طریق تونل Aether
+- پروفایل عملکرد (زیر Advanced؛ هسته v1.8+) با انتخاب خودکار بر اساس رم روتر، و endpointهای gool دو مرحله‌ای (هسته v1.9+)
 - پیکربندی کامل (پروتکل، حالت اسکن، obfuscation، HTTP/2 و غیره)
 
 اگر بعد از به‌روزرسانی صفحه جدید LuCI یا فیلدهای جدید را نمی‌بینید، با
@@ -188,9 +205,19 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
   تست اتصال LuCI و watchdog بازیابی تونل استفاده می‌شود.
 - Secretهای Zero Trust در UCI فقط برای root ذخیره و در خروجی CLI و فرمان سرویس
   مخفی می‌شوند.
+- Tor (بسته‌های Tor در هسته v2): کنترل‌ها بر اساس نسخه هسته نشان داده می‌شوند،
+  اما خود بسته هسته نیز باید Tor را داشته باشد. اگر `:1820` گوش می‌دهد ولی Tor
+  وصل نمی‌شود، در `logread -e aether` دنبال خطای permission بگردید؛ سرویس در
+  شروع، مالکیت و modeهای `/` و `/etc` را ترمیم می‌کند. با `aether-ctl check-tor`
+  بررسی کنید (خروجی موفق: `Tor: true IP: …`).
+- حالت فرمان دستی همه گزینه‌های UCI، از جمله Tor، را دور می‌زند. می‌توانید کل
+  فرمان یا آرگومان‌های مستقل را paste کنید؛ `/usr/bin/aether(-run)` ابتدای فرمان
+  خودکار حذف می‌شود. probeها bind فرمان دستی را می‌خوانند و بدون `--tor`،
+  `check-tor` فوری رد می‌شود.
 - برای تنظیمات، پروتکل‌ها، watchdog، Zero Trust و عیب‌یابی، [راهنمای فارسی
   کلاینت](CLIENT-GUIDE.fa.md) را ببینید.
 - این پروژه وابسته به CluvexStudio نیست
+- این پروژه عمدتاً به‌صورت «vide-coded» ساخته شده است.
 
 ## مجوز
 

@@ -3,6 +3,10 @@
 
 UCI=/sbin/uci
 
+# Core v2's embedded Tor/Arti creates persistent state beneath --tor-dir.
+# Inherit a private umask so every parent directory passes Arti's security check.
+umask 077
+
 team="$($UCI -q get aether.main.team 2>/dev/null)"
 if [ -n "$team" ]; then
 	access_id="$($UCI -q get aether.main.access_id 2>/dev/null)"

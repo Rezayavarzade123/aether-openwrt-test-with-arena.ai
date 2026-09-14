@@ -1,6 +1,6 @@
 #!/bin/sh
 # aether-ctl — CLI management tool for Aether on OpenWrt
-# Usage: aether-ctl {start|stop|restart|status|show|set|version|change-version|test|check-ip|update}
+# Usage: aether-ctl {start|stop|restart|status|show|set|version|change-version|test|check-ip|check-tor|update}
 
 UCI="/sbin/uci"
 PROG="/usr/bin/aether"
@@ -52,6 +52,47 @@ core_supports_v17() {
 		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 7 ] 2>/dev/null; }
 }
 
+core_supports_v18() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 1 ] 2>/dev/null ||
+		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 8 ] 2>/dev/null; }
+}
+
+core_supports_v19() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 1 ] 2>/dev/null ||
+		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 9 ] 2>/dev/null; }
+}
+
+core_supports_v20() {
+	local version="$1" major
+	major="${version%%.*}"
+	[ "$major" -ge 2 ] 2>/dev/null
+}
+
+# Automatic performance profile from total RAM:
+# <256MB -> low, 256MB-768MB -> medium, >768MB -> high
+select_perf_profile() {
+	local total_kb
+	total_kb="$(awk '/^MemTotal/ {print $2}' /proc/meminfo 2>/dev/null)"
+	case "$total_kb" in
+		''|*[!0-9]*) echo "low"; return ;;
+	esac
+	if [ "$total_kb" -lt 262144 ]; then
+		echo "low"
+	elif [ "$total_kb" -lt 786432 ]; then
+		echo "medium"
+	else
+		echo "high"
+	fi
+}
+
 # Mask credentials embedded in an upstream proxy URL:
 # socks5://user:pass@host:1080 -> socks5://***@host:1080
 redact_url() {
@@ -86,9 +127,11 @@ service_pid() {
 }
 
 wait_running() {
+	# Some BusyBox sleep builds reject fractional seconds ("invalid number").
+	# Poll in whole seconds instead; total budget stays 10 s.
 	local i=0
-	while [ $i -lt 20 ] && ! is_running; do
-		sleep 0.5
+	while [ $i -lt 10 ] && ! is_running; do
+		sleep 1
 		i=$((i + 1))
 	done
 	is_running
@@ -161,6 +204,7 @@ do_show() {
 	local scan_mode=$(uci_get scan_mode)
 	local ip_version=$(uci_get ip_version)
 	local obfuscation_profile=$(uci_get obfuscation_profile)
+	local stored_obfuscation
 	local http2_mode=$(uci_get http2_mode)
 	local h2_peer=$(uci_get h2_peer)
 	local fragment_tls=$(uci_get fragment_tls)
@@ -184,6 +228,21 @@ do_show() {
 	[ -n "$installed_version" ] && core_supports_v16 "$installed_version" && supports_v16=1
 	local supports_v17=0
 	[ -n "$installed_version" ] && core_supports_v17 "$installed_version" && supports_v17=1
+	local supports_v18=0
+	[ -n "$installed_version" ] && core_supports_v18 "$installed_version" && supports_v18=1
+	local supports_v19=0
+	[ -n "$installed_version" ] && core_supports_v19 "$installed_version" && supports_v19=1
+	local perf_profile=$(uci_get perf_profile)
+	local wiw_outer=$(uci_get wiw_outer)
+	local wiw_inner=$(uci_get wiw_inner)
+	local mim_outer=$(uci_get mim_outer)
+	local mim_inner=$(uci_get mim_inner)
+	local mim_peers=$(uci_get mim_peers)
+	local quic_v2=$(uci_get quic_v2)
+	local ech=$(uci_get ech)
+	local tor_mode=$(uci_get tor_mode)
+	local supports_v20=0
+	[ -n "$installed_version" ] && core_supports_v20 "$installed_version" && supports_v20=1
 
 	log_key "Boot Enabled" "$([ "$enabled" = "1" ] && echo "yes" || echo "no")"
 	log_key "Core Version" "${installed_version:-unknown}"
@@ -201,7 +260,20 @@ do_show() {
 	fi
 	log_key "Scan Mode" "${scan_mode:-balanced}"
 	log_key "IP Version" "${ip_version:-ipv4}"
-	log_key "Obfuscation" "${obfuscation_profile:-firewall}"
+	# Show the effective profile: init.d remaps anything outside the
+	# protocol family (masque/mim: firewall/gfw/off; wg/gool: balanced/aggressive/light/off).
+	stored_obfuscation="$obfuscation_profile"
+	case "${protocol:-masque}" in
+		wg|gool)
+			case "$obfuscation_profile" in balanced|aggressive|light|off) ;; *) obfuscation_profile=balanced ;; esac ;;
+		*)
+			case "$obfuscation_profile" in firewall|gfw|off) ;; *) obfuscation_profile=firewall ;; esac ;;
+	esac
+	if [ -n "$stored_obfuscation" ] && [ "$stored_obfuscation" != "$obfuscation_profile" ]; then
+		log_key "Obfuscation" "$obfuscation_profile (stored $stored_obfuscation)"
+	else
+		log_key "Obfuscation" "${obfuscation_profile:-firewall}"
+	fi
 	log_key "HTTP/2" "$([ "$http2_mode" = "1" ] && echo "on" || echo "off")"
 	[ -n "$h2_peer" ] && log_key "H2 Peer" "$h2_peer"
 	log_key "TLS Fragment" "$([ "$fragment_tls" = "1" ] && echo "on" || echo "off")"
@@ -223,6 +295,35 @@ do_show() {
 	else
 		log_key "Log Level" "inactive on core v${installed_version:-unknown}"
 	fi
+	if [ "$supports_v18" -eq 1 ]; then
+		log_key "Perf Profile" "${perf_profile:-low}"
+	else
+		log_key "Perf Profile" "inactive on core v${installed_version:-unknown}"
+	fi
+	if [ "${protocol:-masque}" = "gool" ]; then
+		if [ "$supports_v19" -eq 1 ]; then
+			log_key "gool Outer Hop" "${wiw_outer:-auto-scan}"
+			log_key "gool Inner Hop" "${wiw_inner:-auto-scan}"
+		else
+			log_key "gool Hops" "inactive on core v${installed_version:-unknown}"
+		fi
+	fi
+	if [ "$supports_v19" -eq 1 ] && [ -n "$ech" ]; then
+		log_key "ECH" "$ech"
+	fi
+	if [ "${protocol:-masque}" = "mim" ]; then
+		if [ "$supports_v20" -eq 1 ]; then
+			log_key "MIM Outer Hop" "${mim_outer:-auto-scan}"
+			log_key "MIM Inner Hop" "${mim_inner:-auto-scan}"
+			[ -n "$mim_peers" ] && log_key "MIM Peers" "$mim_peers"
+		else
+			log_key "MIM" "inactive on core v${installed_version:-unknown}"
+		fi
+	fi
+	if [ "$supports_v20" -eq 1 ]; then
+		log_key "QUIC v2 Opener" "$([ "$quic_v2" = "0" ] && echo "off" || echo "on")"
+		log_key "Tor" "${tor_mode:-off}"
+	fi
 	log_key "Zero Trust Team" "${team:-disabled}"
 	if [ -n "$team" ]; then
 		log_key "Access Client ID" "$([ -n "$access_id" ] && echo "configured" || echo "missing")"
@@ -231,6 +332,36 @@ do_show() {
 		log_key "Gateway Proxy" "$([ "$gateway" = "1" ] && echo "on" || echo "off")"
 	fi
 	log_key "Data Watchdog" "$([ "$watchdog_enabled" = "0" ] && echo "off" || echo "on")"
+}
+
+# In manual command mode the running listener addresses come from
+# custom_command, not from UCI. manual_opt prints the value of a flag
+# (space or = form) found in custom_command, or nothing.
+manual_opt() {
+	local args flag w prev val
+	args="$1"
+	flag="$2"
+	prev=""
+	val=""
+	for w in $args; do
+		if [ -n "$prev" ]; then
+			val="$w"
+			break
+		fi
+		case "$w" in
+			"$flag") prev=1 ;;
+			"$flag="*) val="${w#*=}" ;;
+		esac
+	done
+	echo "$val"
+}
+
+# Prints 1 when custom_command carries any Tor flag, else 0.
+manual_has_tor() {
+	case " $1 " in
+		*" --tor "*|*" --tor-only "*|*" --tor-reverse "*) echo 1 ;;
+		*) echo 0 ;;
+	esac
 }
 
 do_test() {
@@ -245,8 +376,17 @@ do_test() {
 		return 1
 	fi
 
-	# Always use 127.0.0.1 for local test even if UCI has 0.0.0.0
-	local socks=$(uci_get socks_listen)
+	# Always use 127.0.0.1 for local test even if UCI has 0.0.0.0.
+	# In manual mode the running bind comes from custom_command.
+	local socks mode custom
+	socks=""
+	mode=$(uci_get command_mode)
+	if [ "$mode" = "manual" ]; then
+		custom=$(uci_get custom_command)
+		socks=$(manual_opt "$custom" --bind)
+		[ -z "$socks" ] && socks=$(manual_opt "$custom" --socks)
+	fi
+	[ -z "$socks" ] && socks=$(uci_get socks_listen)
 	socks=$(echo "$socks" | sed 's/0\.0\.0\.0/127.0.0.1/')
 	[ -z "$socks" ] && socks="127.0.0.1:1819"
 
@@ -313,8 +453,17 @@ do_test() {
 	fi
 }
 do_check_ip() {
-	# Always use 127.0.0.1 for local test even if UCI has 0.0.0.0
-	local socks=$(uci_get socks_listen)
+	# Always use 127.0.0.1 for local test even if UCI has 0.0.0.0.
+	# In manual mode the running bind comes from custom_command.
+	local socks mode custom
+	socks=""
+	mode=$(uci_get command_mode)
+	if [ "$mode" = "manual" ]; then
+		custom=$(uci_get custom_command)
+		socks=$(manual_opt "$custom" --bind)
+		[ -z "$socks" ] && socks=$(manual_opt "$custom" --socks)
+	fi
+	[ -z "$socks" ] && socks=$(uci_get socks_listen)
 	socks=$(echo "$socks" | sed 's/0\.0\.0\.0/127.0.0.1/')
 	[ -z "$socks" ] && socks="127.0.0.1:1819"
 
@@ -440,16 +589,103 @@ do_check_ip() {
 	return 1
 }
 
+do_check_tor() {
+	# Tor exit check via the Tor SOCKS listener (default 127.0.0.1:1820).
+	# In tor-only mode the main SOCKS listener itself is Tor.
+	local tor_mode socks installed_version mode custom
+	local raw exit_code meta body http_code time_s time_ms ip istor
+	installed_version="$(core_version)"
+	if [ -z "$installed_version" ] || ! core_supports_v20 "$installed_version"; then
+		log_err "Tor requires Aether core v2.0.0 or newer (installed: ${installed_version:-unknown})"
+		return 1
+	fi
+	mode=$(uci_get command_mode)
+	if [ "$mode" = "manual" ]; then
+		custom=$(uci_get custom_command)
+		if [ "$(manual_has_tor "$custom")" != "1" ]; then
+			log_err "Tor not in custom_command (add --tor --tor-bind 127.0.0.1:1820 or switch to generated mode)"
+			return 1
+		fi
+		case " $custom " in
+			*" --tor-only "*) socks=$(manual_opt "$custom" --bind) ;;
+			*) socks=$(manual_opt "$custom" --tor-bind) ;;
+		esac
+	else
+		tor_mode=$(uci_get tor_mode)
+		case "$tor_mode" in
+			tunnel|reverse|only) ;;
+			*)
+				log_err "Tor is off (tor_mode=${tor_mode:-off}). Enable with: aether-ctl set tor_mode tunnel"
+				return 1 ;;
+		esac
+		if [ "$tor_mode" = "only" ]; then
+			socks=$(uci_get socks_listen)
+		else
+			socks=$(uci_get tor_bind)
+		fi
+	fi
+	# Always use 127.0.0.1 for local test even if UCI has 0.0.0.0
+	socks=$(echo "$socks" | sed 's/0\.0\.0\.0/127.0.0.1/')
+	[ -z "$socks" ] && socks="127.0.0.1:1820"
+
+	if ! command -v curl >/dev/null 2>&1; then
+		log_err "curl not found. Install curl using your package manager."
+		return 1
+	fi
+
+	log_info "Checking Tor exit via SOCKS5 ($socks)..."
+
+	# Bounded well under the uhttpd ubus RPC timeout so the LuCI button
+	# reports FAILED instead of a transport Error on slow circuits.
+	raw=$(curl -s \
+		-w "\n%{http_code} %{time_total}" \
+		--socks5-hostname "$socks" \
+		--connect-timeout 8 --max-time 22 \
+		"https://check.torproject.org/api/ip" 2>/dev/null)
+	exit_code=$?
+
+	if [ $exit_code -eq 0 ] && [ -n "$raw" ]; then
+		meta=$(echo "$raw" | tail -n 1)
+		body=$(echo "$raw" | sed '$d')
+		http_code=$(echo "$meta" | awk '{print $1}')
+		time_s=$(echo "$meta" | awk '{print $2}')
+		time_ms=$(awk -v t="$time_s" 'BEGIN{printf "%.0f", t*1000}')
+		[ -z "$time_ms" ] && time_ms="0"
+
+		if [ "$http_code" = "200" ] && [ -n "$body" ]; then
+			if command -v jsonfilter >/dev/null 2>&1; then
+				istor=$(printf '%s' "$body" | jsonfilter -e '@.IsTor' 2>/dev/null)
+				ip=$(printf '%s' "$body" | jsonfilter -e '@.IP' 2>/dev/null)
+			fi
+			[ -z "$istor" ] && istor=$(printf '%s' "$body" | sed -n 's/.*"IsTor":[[:space:]]*\([^,}]*\).*/\1/p' | tr 'A-Z' 'a-z')
+			[ -z "$ip" ] && ip=$(printf '%s' "$body" | sed -n 's/.*"IP":[[:space:]]*"\([^"]*\)".*/\1/p')
+
+			if [ -n "$ip" ]; then
+				case "$istor" in
+					true|1) log_info "Tor: true IP: $ip ${time_ms}ms" ;;
+					*) log_info "Tor: false IP: $ip ${time_ms}ms" ;;
+				esac
+				return 0
+			fi
+		fi
+	fi
+
+	log_err "FAILED ${time_ms:-22000}ms"
+	return 1
+}
+
 do_set() {
 	local key="$1"
 	local value="$2"
+	local installed_version proto_tor tor_proto
+	installed_version="$(core_version)"
 
 	if [ -z "$key" ] || [ -z "$value" ]; then
 		echo "Usage: aether-ctl set <option> <value>"
 		echo ""
 		echo "Options:"
 		echo "  enabled             yes/no"
-		echo "  protocol            masque/wg/gool"
+		echo "  protocol            masque/wg/gool/mim (mim requires v2.0.0+)"
 		echo "  socks_listen        ip:port"
 		echo "  http_proxy          ip:port (optional HTTP CONNECT proxy)"
 		echo "  upstream_proxy      proxy URL (v1.7+ upstream chaining; e.g. socks5://[user:pass@]host:port)"
@@ -476,6 +712,19 @@ do_set() {
 		echo "  watchdog_enabled    0/1"
 		echo "  watchdog_interval   seconds"
 		echo "  watchdog_failures   failures before recovery"
+		echo "  perf_profile        low/medium/high (v1.8+; or use auto-perf)"
+		echo "  wiw_outer           ip:port (gool outer hop, v1.9+; 'auto' clears)"
+		echo "  wiw_inner           ip:port (gool inner hop, v1.9+; 'auto' clears)"
+		echo "  mim_outer|mim_inner ip:port (MASQUE-in-MASQUE hops, v2.0.0+; 'auto' clears)"
+		echo "  mim_peers           outer[,inner] ip:port values (v2.0.0+; 'auto' clears)"
+		echo "  quic_v2             0/1 (MASQUE/MIM, v2.0.0+)"
+		echo "  ech                 auto or base64 ECH config (v1.9+)"
+		echo "  tor_mode            off/tunnel/reverse/only (v2.0.0+)"
+		echo "  tor_bind            ip:port (v2.0.0+)"
+		echo "  tor_dir             state directory path (v2.0.0+)"
+		echo "  tor_bridges         auto/on/off (v2.0.0+)"
+		echo "  command_mode        generated/manual (custom core command line)"
+		echo "  custom_command      manual arguments, space-separated ('auto' clears)"
 		return 1
 	fi
 
@@ -483,6 +732,30 @@ do_set() {
 		case "$key" in
 			http_proxy|startup_secs|log_level)
 				log_err "$key requires Aether core v1.6.0 or newer"
+				return 1
+				;;
+		esac
+	fi
+	if [ -n "$installed_version" ] && ! core_supports_v18 "$installed_version"; then
+		case "$key" in
+			perf_profile)
+				log_err "$key requires Aether core v1.8.0 or newer"
+				return 1
+				;;
+		esac
+	fi
+	if [ -n "$installed_version" ] && ! core_supports_v19 "$installed_version"; then
+		case "$key" in
+			wiw_outer|wiw_inner|ech)
+				log_err "$key requires Aether core v1.9.0 or newer"
+				return 1
+				;;
+		esac
+	fi
+	if [ -n "$installed_version" ] && ! core_supports_v20 "$installed_version"; then
+		case "$key" in
+			mim_outer|mim_inner|mim_peers|quic_v2|tor_mode|tor_bind|tor_dir|tor_bridges)
+				log_err "$key requires Aether core v2.0.0 or newer"
 				return 1
 				;;
 		esac
@@ -498,8 +771,20 @@ do_set() {
 		protocol)
 			case "$value" in
 				masque|wg|gool) ;;
-				*) log_err "Invalid protocol: $value (use masque/wg/gool)"; return 1 ;;
-			esac ;;
+				mim)
+					[ -n "$installed_version" ] && core_supports_v20 "$installed_version" || {
+						log_err "mim requires Aether core v2.0.0 or newer"
+						return 1
+					} ;;
+				*) log_err "Invalid protocol: $value (use masque/wg/gool/mim)"; return 1 ;;
+			esac
+			if [ "$value" != "masque" ]; then
+				proto_tor=$(uci_get tor_mode)
+				if [ "$proto_tor" = "reverse" ]; then
+					log_err "Tor reverse mode requires protocol masque (tor_mode=reverse is set). Change tor_mode first or use protocol masque."
+					return 1
+				fi
+			fi ;;
 		scan_mode)
 			case "$value" in
 				turbo|balanced|thorough|stealth|ironclad) ;;
@@ -510,7 +795,7 @@ do_set() {
 				ipv4|ipv6|both) ;;
 				*) log_err "Invalid ip_version: $value (use ipv4/ipv6/both)"; return 1 ;;
 			esac ;;
-		http2_mode|fragment_tls|quick_reconnect|no_data_check|no_profile_retry|gateway|watchdog_enabled)
+		http2_mode|fragment_tls|quick_reconnect|no_data_check|no_profile_retry|gateway|watchdog_enabled|quic_v2)
 			case "$value" in
 				0|1|on|off|yes|no)
 					case "$value" in
@@ -519,6 +804,57 @@ do_set() {
 					esac ;;
 				*) log_err "Invalid value: $value (use 0/1)"; return 1 ;;
 			esac ;;
+		perf_profile)
+			case "$value" in
+				auto)
+					value="$(select_perf_profile)"
+					log_info "Auto-detected profile based on RAM: $value"
+					;;
+				low|medium|high) ;;
+				*) log_err "Invalid perf_profile: $value (use low/medium/high or auto)"; return 1 ;;
+			esac ;;
+		wiw_outer|wiw_inner|mim_outer|mim_inner)
+			case "$value" in
+				auto) value="" ;;
+				*.*:*) ;;
+				*) log_err "Invalid value for $key: $value (use ip:port or auto)"; return 1 ;;
+			esac ;;
+		mim_peers)
+			case "$value" in
+				auto) value="" ;;
+				*.*:*) ;;
+				*) log_err "Invalid mim_peers: $value (use outer[,inner] ip:port values or auto)"; return 1 ;;
+			esac ;;
+		ech)
+			case "$value" in
+				auto|*[![:space:]]*) ;;
+				*) log_err "Invalid ECH value: use auto or a base64 configuration"; return 1 ;;
+			esac ;;
+		tor_mode)
+			case "$value" in off|tunnel|reverse|only) ;; *) log_err "Invalid tor_mode: use off/tunnel/reverse/only"; return 1 ;; esac
+			if [ "$value" = "reverse" ]; then
+				tor_proto=$(uci_get protocol)
+				if [ "${tor_proto:-masque}" != "masque" ]; then
+					log_err "Tor reverse mode requires protocol masque (current: $tor_proto). Set protocol first: aether-ctl set protocol masque"
+					return 1
+				fi
+			fi ;;
+		tor_bind)
+			case "$value" in
+				*.*:*) ;;
+				*) log_err "Invalid tor_bind: $value (use ip:port)"; return 1 ;;
+			esac ;;
+		tor_dir)
+			case "$value" in
+				''|/*) ;;
+				*) log_err "Invalid tor_dir: $value (use an absolute path)"; return 1 ;;
+			esac ;;
+		tor_bridges)
+			case "$value" in auto|on|off) ;; *) log_err "Invalid tor_bridges: use auto/on/off"; return 1 ;; esac ;;
+		command_mode)
+			case "$value" in generated|manual) ;; *) log_err "Invalid command_mode: use generated/manual"; return 1 ;; esac ;;
+		custom_command)
+			case "$value" in auto) value="" ;; '') log_err "Empty custom_command: use 'auto' to clear"; return 1 ;; esac ;;
 		keepalive|reconnect_secs|validate_secs|startup_secs|watchdog_interval|watchdog_failures|watchdog_startup_grace|watchdog_cooldown)
 			case "$value" in
 				''|*[!0-9]*) log_err "Invalid numeric value: $value"; return 1 ;;
@@ -547,6 +883,30 @@ do_set() {
 		log_info "Set $key = $value"
 	fi
 
+	if is_running; then
+		echo ""
+		log_warn "Aether is running. Changes take effect on next restart."
+		printf "Restart now? [y/N]: "
+		read -r answer
+		case "$answer" in
+			y|Y|yes|YES) do_restart ;;
+		esac
+	fi
+}
+
+do_auto_perf() {
+	local installed_version supports_v18=0
+	installed_version="$(core_version)"
+	[ -n "$installed_version" ] && core_supports_v18 "$installed_version" && supports_v18=1
+	if [ "$supports_v18" -ne 1 ]; then
+		log_err "perf_profile requires Aether core v1.8.0 or newer"
+		return 1
+	fi
+	local prof
+	prof="$(select_perf_profile)"
+	uci_set "perf_profile" "$prof"
+	$UCI commit aether
+	log_info "Detected router RAM: set perf_profile = $prof"
 	if is_running; then
 		echo ""
 		log_warn "Aether is running. Changes take effect on next restart."
@@ -899,12 +1259,14 @@ case "${1:-}" in
 	set)      do_set "$2" "$3" ;;
 	test)     do_test "$2" ;;
 	check-ip|ip) do_check_ip ;;
+	check-tor|tor-ip) do_check_tor ;;
 	log)      do_log "$2" ;;
 	passwall) shift; do_passwall "$@" ;;
 	version)  shift; do_version "$@" ;;
 	change-version) shift; do_change_version "$@" ;;
 	update)   shift; do_update "$@" ;;
-	*)
+	auto-perf) do_auto_perf ;;
+	help|--help|-h|*)
 		echo "Aether OpenWrt Controller"
 		echo ""
 		echo "Usage: aether-ctl <command> [args]"
@@ -915,27 +1277,33 @@ case "${1:-}" in
 		echo "  restart         Restart Aether tunnel"
 		echo "  status          Show running status and config"
 		echo "  show            Show current configuration"
-		echo "  set <opt> <val> Change a configuration option"
+		echo "  set <opt> <val> Change a configuration option (bare 'set' lists options)"
 		echo "  test <host>     Test connection through the tunnel"
 		echo "  check-ip        Check public IP address, country, and ping"
 		echo "  ip              Alias for check-ip"
+		echo "  check-tor       Check Tor exit IP and IsTor status (v2.0.0+)"
 		echo "  log [lines]     Show Aether logs (default 50 lines)"
 		echo "  passwall <cmd>  Passwall2 bridge: status | localhost on|off | add-node"
 		echo "  version [change <tag> [opts]]  Show or change the Aether core version"
 		echo "  change-version <tag> [opts]     Install a core version (v1.5.0+)"
 		echo "  update [opts]                   Download current updater and reinstall"
+		echo "  auto-perf                       Auto-detect router RAM and set recommended perf_profile"
 		echo ""
 		echo "Examples:"
 		echo "  aether-ctl start"
 		echo "  aether-ctl set protocol wg"
 		echo "  aether-ctl set scan_mode ironclad"
 		echo "  aether-ctl set obfuscation_profile aggressive"
+		echo "  aether-ctl set command_mode manual"
+		echo "  aether-ctl set custom_command '--bind 0.0.0.0:1819 --wg'"
 		echo "  aether-ctl test google.com"
 		echo "  aether-ctl check-ip"
+		echo "  aether-ctl check-tor"
 		echo "  aether-ctl passwall status"
 		echo "  aether-ctl passwall localhost off"
 		echo "  aether-ctl passwall add-node"
 		echo "  aether-ctl set enabled no"
+		echo "  aether-ctl auto-perf"
 		echo "  aether-ctl change-version v1.5.0 --start"
 		echo "  aether-ctl update --version v1.6.0 --start"
 		;;

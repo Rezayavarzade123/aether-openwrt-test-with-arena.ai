@@ -69,6 +69,92 @@ core_supports_v17() {
 		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 7 ] 2>/dev/null; }
 }
 
+core_supports_v18() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 1 ] 2>/dev/null ||
+		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 8 ] 2>/dev/null; }
+}
+
+core_supports_v19() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 1 ] 2>/dev/null ||
+		{ [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 9 ] 2>/dev/null; }
+}
+
+# v2 adds MASQUE-in-MASQUE, the QUIC v2 control, and optional Tor modes.
+core_supports_v20() {
+	local version="$1" major
+	major="${version%%.*}"
+	[ "$major" -ge 2 ] 2>/dev/null
+}
+
+# Automatic performance profile from total RAM. Thresholds follow the
+# measured RSS table in CLIENT-GUIDE.en.md (core 1.9.0, x86_64): peak RSS
+# stays under the next-lower boundary with headroom for id-load spikes.
+select_perf_profile() {
+	local total_kb
+	total_kb="$(awk '/^MemTotal/ {print $2}' /proc/meminfo 2>/dev/null)"
+	case "$total_kb" in
+		''|*[!0-9]*) echo "low"; return ;;
+	esac
+	if [ "$total_kb" -lt 262144 ]; then
+		echo "low"
+	elif [ "$total_kb" -lt 786432 ]; then
+		echo "medium"
+	else
+		echo "high"
+	fi
+}
+
+# Core v2's embedded Tor (Arti) refuses its persistent state unless every
+# ancestor directory is root-owned and free of group/other write bits
+# (fs-mistrust). OpenWrt images ship / and /etc owned by the firmware build
+# UID, and tar overlays extracted as root reset their mode to the archived
+# (Windows: 0777) value, so repair both when Tor is on.
+fix_tor_state_owners() {
+	local d out owner perms fixed
+	for d in / /etc; do
+		fixed=0
+		out="$(ls -lad "$d" 2>/dev/null)"
+		owner="$(echo "$out" | awk '{print $3}')"
+		perms="$(echo "$out" | awk '{print $1}')"
+		if [ -n "$owner" ] && [ "$owner" != "root" ] && [ "$owner" != "0" ]; then
+			chown root:root "$d" 2>/dev/null && fixed=1
+		fi
+		case "$perms" in
+			?????w*|????????w*) chmod 755 "$d" 2>/dev/null && fixed=1 ;;
+		esac
+		if [ "$fixed" -eq 1 ]; then
+			logger -t aether "Repaired $d ownership/permissions for Tor state"
+		fi
+	done
+}
+# instance with respawn/logging, then start the data-plane watchdog.
+finish_service_instances() {
+	# Reset the crash counter after 30 seconds of healthy runtime. The old
+	# one-hour threshold permanently stopped recovery after several unrelated
+	# WireGuard/gool drops within an hour.
+	procd_set_param respawn 30 5 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+
+	if [ "$watchdog_enabled" -eq 1 ] && [ -x /usr/bin/aether-watchdog ] &&
+	   command -v curl >/dev/null 2>&1; then
+		procd_open_instance "watchdog"
+		procd_set_param command /usr/bin/aether-watchdog
+		procd_set_param respawn 30 5 5
+		procd_set_param stdout 1
+		procd_set_param stderr 1
+		procd_close_instance
+	fi
+}
 start_service() {
 	config_load aether
 
@@ -78,8 +164,11 @@ start_service() {
 	local keepalive reconnect_secs validate_secs startup_secs quick_reconnect
 	local no_data_check config_path log_level
 	local no_profile_retry team access_id access_secret access_token
-	local upstream_proxy
-	local installed_version supports_v16 supports_v17
+	local upstream_proxy perf_profile wiw_outer wiw_inner mim_outer mim_inner mim_peers
+	local quic_v2 ech tor_mode tor_bind tor_dir tor_bridges masque_identity_path
+	local command_mode custom_command
+	local manual_args
+	local installed_version supports_v16 supports_v17 supports_v18 supports_v19 supports_v20
 
 	installed_version="$(core_version)"
 	if [ -z "$installed_version" ]; then
@@ -87,20 +176,48 @@ start_service() {
 		echo "aether: cannot determine /usr/bin/aether version" >&2
 		return 1
 	fi
-	if core_supports_v17 "$installed_version"; then
-		supports_v17=1
-	else
-		supports_v17=0
-	fi
 	if core_supports_v16 "$installed_version"; then
 		supports_v16=1
 	else
 		supports_v16=0
 	fi
-
+	if core_supports_v17 "$installed_version"; then
+		supports_v17=1
+	else
+		supports_v17=0
+	fi
+	if core_supports_v18 "$installed_version"; then
+		supports_v18=1
+	else
+		supports_v18=0
+	fi
+	if core_supports_v19 "$installed_version"; then
+		supports_v19=1
+	else
+		supports_v19=0
+	fi
+	if core_supports_v20 "$installed_version"; then
+		supports_v20=1
+	else
+		supports_v20=0
+	fi
 	config_get protocol main protocol 'masque'
 	config_get socks_listen main socks_listen '0.0.0.0:1819'
 	config_get http_proxy main http_proxy ''
+	config_get perf_profile main perf_profile 'low'
+	config_get wiw_outer main wiw_outer ''
+	config_get wiw_inner main wiw_inner ''
+	config_get mim_outer main mim_outer ''
+	config_get mim_inner main mim_inner ''
+	config_get mim_peers main mim_peers ''
+	config_get quic_v2 main quic_v2 '1'
+	config_get ech main ech ''
+	config_get tor_mode main tor_mode 'off'
+	config_get tor_bind main tor_bind '127.0.0.1:1820'
+	config_get tor_dir main tor_dir ''
+	config_get tor_bridges main tor_bridges 'auto'
+	config_get command_mode main command_mode 'generated'
+	config_get custom_command main custom_command ''
 	config_get upstream_proxy main upstream_proxy ''
 	config_get scan_mode main scan_mode 'balanced'
 	config_get ip_version main ip_version 'ipv4'
@@ -147,13 +264,46 @@ start_service() {
 	fi
 
 	mkdir -p "$(dirname "$config_path")" 2>/dev/null
-	# Drop empty stubs so wg/gool can provision; keep valid identity files.
+	# Drop empty stubs so all transports can provision; keep valid identity files.
+	# MIM's inner identity is the secondary sibling of the MASQUE identity.
+	masque_identity_path="$(identity_sibling "$config_path" masque)"
 	sanitize_identity_file "$config_path"
 	sanitize_identity_file "$(identity_sibling "$config_path" secondary)"
-	sanitize_identity_file "$(identity_sibling "$config_path" masque)"
+	sanitize_identity_file "$masque_identity_path"
+	sanitize_identity_file "$(identity_sibling "$masque_identity_path" secondary)"
 
 	procd_open_instance "core"
 	procd_set_param command "$command"
+	# Manual command mode: run the operator's exact arguments instead of the
+	# generated flags. Still launched through aether-run so Zero Trust
+	# secrets stay in the environment, never on the command line.
+	if [ "$command_mode" = "manual" ]; then
+		manual_args="$custom_command"
+		# Accept the full command as shown in LuCI/ubus: drop a leading
+		# binary path so it is never passed twice (which makes the core
+		# dump --help in a crash loop).
+		case "$manual_args" in
+			"$RUNNER "*|"$PROG "*) manual_args="${manual_args#* }" ;;
+			"$RUNNER"|"$PROG") manual_args="" ;;
+		esac
+		if [ -z "$manual_args" ]; then
+			logger -t aether "Manual command mode with empty custom_command; falling back to generated flags"
+		else
+			local w had_f
+			case "$-" in *f*) had_f=1 ;; *) had_f=0 ;; esac
+			set -f
+			for w in $manual_args; do
+				procd_append_param command "$w"
+			done
+			[ "$had_f" -eq 0 ] && set +f
+			case "$manual_args" in
+				*--tor*) fix_tor_state_owners ;;
+			esac
+			logger -t aether "Starting Aether with manual command arguments: $manual_args"
+			finish_service_instances
+			return 0
+		fi
+	fi
 	procd_append_param command --bind "$socks_listen"
 	if [ -n "$http_proxy" ] && [ "$supports_v16" -eq 1 ]; then
 		procd_append_param command --http-proxy "$http_proxy"
@@ -166,6 +316,27 @@ start_service() {
 		logger -t aether "Ignoring upstream proxy: Aether v$installed_version requires v1.7.0 or newer"
 	fi
 	procd_append_param command --config "$config_path"
+	# Core v1.8+ resource profile: explicit UCI value wins; empty selects
+	# automatically from total RAM (see select_perf_profile).
+	if [ "$supports_v18" -eq 1 ]; then
+		if [ -z "$perf_profile" ]; then
+			perf_profile="$(select_perf_profile)"
+			logger -t aether "auto-selected performance profile: $perf_profile"
+		fi
+		procd_append_param command --perf "$perf_profile"
+	fi
+	# Core v1.9+ dual-hop gool endpoints. Named hops are kept across
+	# reconnects by the core; unnamed hops are scanned as before.
+	if [ "$supports_v19" -eq 1 ] && [ "$protocol" = "gool" ]; then
+		[ -n "$wiw_outer" ] && procd_append_param command --wiw-outer "$wiw_outer"
+		[ -n "$wiw_inner" ] && procd_append_param command --wiw-inner "$wiw_inner"
+	fi
+	# Core v2 MASQUE-in-MASQUE endpoints are separate from gool endpoints.
+	if [ "$supports_v20" -eq 1 ] && [ "$protocol" = "mim" ]; then
+		[ -n "$mim_outer" ] && procd_append_param command --mim-outer "$mim_outer"
+		[ -n "$mim_inner" ] && procd_append_param command --mim-inner "$mim_inner"
+		[ -n "$mim_peers" ] && procd_append_param command --mim-peers "$mim_peers"
+	fi
 	case "$protocol" in
 		masque)
 			procd_append_param command --masque
@@ -178,6 +349,15 @@ start_service() {
 		gool)
 			procd_append_param command --gool
 			case "$obfuscation_profile" in balanced|aggressive|light|off) ;; *) obfuscation_profile=balanced ;; esac
+			;;
+		mim)
+			[ "$supports_v20" -eq 1 ] || {
+				logger -t aether "ERROR: MASQUE-in-MASQUE requires Aether core v2.0.0 or newer"
+				procd_close_instance
+				return 1
+			}
+			procd_append_param command --mim
+			case "$obfuscation_profile" in firewall|gfw|off) ;; *) obfuscation_profile=firewall ;; esac
 			;;
 		*)
 			logger -t aether "ERROR: invalid protocol: $protocol"
@@ -199,8 +379,12 @@ start_service() {
 	esac
 
 	[ -n "$obfuscation_profile" ] && procd_append_param command --noize "$obfuscation_profile"
-	if [ "$protocol" = "masque" ]; then
+	if [ "$protocol" = "masque" ] || [ "$protocol" = "mim" ]; then
 		[ "$http2_mode" = "1" ] && procd_append_param command --h2
+		[ "$supports_v20" -eq 1 ] && [ "$quic_v2" = "0" ] &&
+			procd_append_param command --no-quic-v2
+		[ "$supports_v19" -eq 1 ] && [ -n "$ech" ] &&
+			procd_append_param command --ech "$ech"
 		[ -n "$h2_peer" ] && [ "$http2_mode" = "1" ] &&
 			procd_append_param command --h2-peer "$h2_peer"
 		if [ "$fragment_tls" = "1" ]; then
@@ -213,11 +397,11 @@ start_service() {
 	[ "$protocol" != "masque" ] && procd_append_param command --keepalive "$keepalive"
 	# v1.5 documents these flags for MASQUE only. v1.6+ accepts the
 	# integration's existing all-transport reconnect/validation behavior.
-	if [ "$protocol" = "masque" ] || [ "$supports_v16" -eq 1 ]; then
+	if [ "$protocol" = "masque" ] || [ "$protocol" = "mim" ] || [ "$supports_v16" -eq 1 ]; then
 		procd_append_param command --reconnect-secs "$reconnect_secs"
 		procd_append_param command --validate-secs "$validate_secs"
 	fi
-	if [ "$protocol" = "masque" ] && [ "$supports_v16" -eq 1 ]; then
+	if { [ "$protocol" = "masque" ] || [ "$protocol" = "mim" ]; } && [ "$supports_v16" -eq 1 ]; then
 		procd_append_param command --startup-secs "$startup_secs"
 	fi
 	[ "$protocol" != "masque" ] && [ "$no_profile_retry" = "1" ] &&
@@ -228,23 +412,36 @@ start_service() {
 	[ "$quick_reconnect" = "1" ] && procd_append_param command --quick-reconnect
 	[ "$quick_reconnect" = "0" ] && procd_append_param command --no-quick-reconnect
 	[ "$no_data_check" = "1" ] && procd_append_param command --no-data-check
-	# Reset the crash counter after 30 seconds of healthy runtime. The old
-	# one-hour threshold permanently stopped recovery after several unrelated
-	# WireGuard/gool drops within an hour.
-	procd_set_param respawn 30 5 5
-	procd_set_param stdout 1
-	procd_set_param stderr 1
-	procd_close_instance
-
-	if [ "$watchdog_enabled" -eq 1 ] && [ -x /usr/bin/aether-watchdog ] &&
-	   command -v curl >/dev/null 2>&1; then
-		procd_open_instance "watchdog"
-		procd_set_param command /usr/bin/aether-watchdog
-		procd_set_param respawn 30 5 5
-		procd_set_param stdout 1
-		procd_set_param stderr 1
-		procd_close_instance
+	if [ "$supports_v20" -eq 1 ]; then
+		case "$tor_mode" in
+			off|'') ;;
+			tunnel) procd_append_param command --tor ;;
+			reverse)
+				[ "$protocol" = "masque" ] || {
+					logger -t aether "ERROR: Tor reverse mode requires MASQUE"
+					procd_close_instance
+					return 1
+				}
+				procd_append_param command --tor-reverse ;;
+			only) procd_append_param command --tor-only ;;
+			*)
+				logger -t aether "ERROR: invalid Tor mode: $tor_mode"
+				procd_close_instance
+				return 1 ;;
+		esac
+		if [ "$tor_mode" != "off" ] && [ -n "$tor_mode" ]; then
+			fix_tor_state_owners
+			if [ "$tor_mode" = "tunnel" ] || [ "$tor_mode" = "reverse" ]; then
+				[ -n "$tor_bind" ] && procd_append_param command --tor-bind "$tor_bind"
+			fi
+			[ -n "$tor_dir" ] && procd_append_param command --tor-dir "$tor_dir"
+			case "$tor_bridges" in
+				on) procd_append_param command --tor-bridges ;;
+				off) procd_append_param command --no-tor-bridges ;;
+			esac
+		fi
 	fi
+	finish_service_instances
 }
 
 stop_service() {

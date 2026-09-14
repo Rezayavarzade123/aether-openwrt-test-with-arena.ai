@@ -12,7 +12,7 @@
 'require ui';
 'require view';
 
-var AETHER_CLIENT_VERSION = 'v0.5.1';
+var AETHER_CLIENT_VERSION = 'v0.8.0';
 
 /* Obfuscation profiles from Aether core guide — depend on protocol. */
 var AETHER_PROFILES = {
@@ -31,6 +31,11 @@ var AETHER_PROFILES = {
 		balanced: 'Balanced (recommended)',
 		aggressive: 'Aggressive',
 		light: 'Light',
+		off: 'Off'
+	},
+	mim: {
+		firewall: 'Firewall (recommended)',
+		gfw: 'GFW',
 		off: 'Off'
 	}
 };
@@ -58,6 +63,28 @@ function aetherCoreSupportsV17(version) {
 	if (!m)
 		return false;
 	return Number(m[1]) > 1 || (Number(m[1]) === 1 && Number(m[2]) >= 7);
+}
+
+/* v1.8 added the resource performance profile. Routing rules, in-tunnel
+ * DNS and TLS groups are core-side defaults and deliberately not exposed. */
+function aetherCoreSupportsV18(version) {
+	var m = String(version || '').match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)/);
+	if (!m)
+		return false;
+	return Number(m[1]) > 1 || (Number(m[1]) === 1 && Number(m[2]) >= 8);
+}
+
+/* v1.9 added independent dual-hop gool endpoint control. */
+function aetherCoreSupportsV19(version) {
+	var m = String(version || '').match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)/);
+	if (!m)
+		return false;
+	return Number(m[1]) > 1 || (Number(m[1]) === 1 && Number(m[2]) >= 9);
+}
+
+function aetherCoreSupportsV20(version) {
+	var m = String(version || '').match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)/);
+	return !!m && Number(m[1]) >= 2;
 }
 
 function aetherSyncProfileChoices(profileOpt, section_id, protocol) {
@@ -139,7 +166,7 @@ function aetherSetOptionDisabled(opt, section_id, disabled) {
 }
 
 function aetherSyncMasqueOptions(options, section_id, protocol) {
-	var disabled = (protocol !== 'masque');
+	var disabled = (protocol !== 'masque' && protocol !== 'mim');
 	options.forEach(function(opt) {
 		aetherSetOptionDisabled(opt, section_id, disabled);
 	});
@@ -204,14 +231,20 @@ function getServiceStatus() {
 		callUCIGet('aether', 'main', 'protocol').then(function(r) {
 			return (r && r.value) ? String(r.value).replace(/'/g, '') : 'masque';
 		}).catch(function() { return 'masque'; }),
+		callUCIGet('aether', 'main', 'tor_mode').then(function(r) {
+			return (r && r.value) ? String(r.value).replace(/'/g, '') : 'off';
+		}).catch(function() { return 'off'; }),
 		callFileExec('logread', [ '-e', 'aether', '-l', '30' ]).then(function(r) {
 			return (r && r.stdout) ? r.stdout : '';
 		}).catch(function() { return ''; }),
 		callFileExec('/usr/bin/aether', [ '--version' ]).then(function(r) {
 			return (r && r.stdout) ? String(r.stdout).trim() : '';
-		}).catch(function() { return ''; })
+		}).catch(function() { return ''; }),
+		callUCIGet('aether', 'main', 'tor_bind').then(function(r) {
+			return (r && r.value) ? String(r.value).replace(/'/g, '') : '127.0.0.1:1820';
+		}).catch(function() { return '127.0.0.1:1820'; })
 	]).then(function(r) {
-		var svc = r[0], logs = r[3], version = r[4];
+		var svc = r[0], logs = r[4], version = r[5];
 		return {
 			running: svc.running,
 			pid: svc.pid,
@@ -219,6 +252,8 @@ function getServiceStatus() {
 			enabled: r[1],
 			protocol: r[2],
 			version: version.replace(/^aether\s+/i, ''),
+			torMode: r[3],
+			torBind: r[6],
 			endpoint: extractFromLogs(logs, /using cloudflare edge ([0-9.:]+)/),
 			transport: extractFromLogs(logs, /MASQUE transport: ([^\s]+)/),
 			socks_addr: extractFromLogs(logs, /socks5 (?:server )?listening on ([^\s]+)/),
@@ -348,6 +383,54 @@ function doCheckIp() {
 	};
 }
 
+function doCheckTor() {
+	return function() {
+		var btn = this;
+		var resultEl = document.getElementById('test-result-tor');
+		btn.disabled = true;
+		btn.value = 'Checking...';
+		if (resultEl) {
+			resultEl.textContent = 'Connecting...';
+			resultEl.style.color = '#888';
+		}
+
+		callFileExec('/usr/bin/aether-ctl', [ 'check-tor' ]
+		).then(function(r) {
+			var output = (r && r.stdout) ? r.stdout : '';
+			var errput = (r && r.stderr) ? r.stderr : '';
+			var combined = output + ' ' + errput;
+			var torMatch = combined.match(/Tor:\s*(true|false)\s+IP:\s*(\S+)\s+(\d+)ms/i);
+			var failMatch = combined.match(/FAILED\s+(\d+)ms/i);
+
+			if (torMatch) {
+				if (resultEl) {
+					var isTor = /^true$/i.test(torMatch[1]);
+					resultEl.textContent = (isTor ? 'Tor \u2713 ' : 'NOT Tor \u2717 ') + torMatch[2] + ' \u2014 ' + torMatch[3] + 'ms';
+					resultEl.style.color = isTor ? '#2ecc71' : '#e74c3c';
+				}
+			} else if (failMatch) {
+				if (resultEl) {
+					resultEl.textContent = 'Failed \u2014 ' + failMatch[1] + 'ms';
+					resultEl.style.color = '#e74c3c';
+				}
+			} else {
+				if (resultEl) {
+					resultEl.textContent = 'Failed';
+					resultEl.style.color = '#e74c3c';
+				}
+			}
+		}).catch(function() {
+			if (resultEl) {
+				resultEl.textContent = 'Error';
+				resultEl.style.color = '#e74c3c';
+			}
+		}).finally(function() {
+			btn.disabled = false;
+			btn.value = 'Check Tor IP';
+		});
+	};
+}
+
 /* Parse "key=value" lines emitted by `aether-ctl passwall status`. */
 function parseKeyValues(text) {
 	var out = {};
@@ -394,6 +477,9 @@ return view.extend({
 		return getServiceStatus().then(function(st) {
 			var supportsV16 = aetherCoreSupportsV16(st.version);
 			var supportsV17 = aetherCoreSupportsV17(st.version);
+			var supportsV18 = aetherCoreSupportsV18(st.version);
+			var supportsV19 = aetherCoreSupportsV19(st.version);
+			var supportsV20 = aetherCoreSupportsV20(st.version);
 			var tbl = E('table', { 'class': 'table' });
 
 			function row(label, val) {
@@ -426,6 +512,19 @@ return view.extend({
 				}
 			} else {
 				row('Info', 'Service is not running. Click Start to begin.');
+			}
+
+			if (supportsV20) {
+				if (!st.torMode || st.torMode === 'off') {
+					row('Tor', 'Disabled');
+				} else if (st.torMode === 'only') {
+					row('Tor', 'Enabled (Tor only, no WARP tunnel)');
+				} else {
+					var torAddr = String(st.torBind || '127.0.0.1:1820').replace(/0\.0\.0\.0/, '127.0.0.1');
+					row('Tor', E('span', {}, ['Enabled at ', E('code', {}, torAddr)]));
+				}
+			} else {
+				row('Tor', 'Needs core v2.0+');
 			}
 
 			var btns = E('div', {
@@ -516,6 +615,28 @@ return view.extend({
 			ipWrapper.appendChild(ipBtn);
 			ipWrapper.appendChild(ipResult);
 			testRow.appendChild(ipWrapper);
+
+			if (supportsV20 && (st.torMode === 'tunnel' || st.torMode === 'reverse' || st.torMode === 'only')) {
+				var torWrapper = E('div', {
+					'style': 'display:flex;align-items:center;gap:6px'
+				});
+
+				var torBtn = E('input', {
+					'type': 'button',
+					'class': 'cbi-button cbi-button-apply',
+					'value': 'Check Tor IP',
+					'click': doCheckTor()
+				});
+
+				var torResult = E('span', {
+					'id': 'test-result-tor',
+					'style': 'font-size:13px;color:#888;min-width:140px'
+				}, '');
+
+				torWrapper.appendChild(torBtn);
+				torWrapper.appendChild(torResult);
+				testRow.appendChild(torWrapper);
+			}
 
 			testSection.appendChild(testRow);
 			el.appendChild(testSection);
@@ -686,6 +807,8 @@ return view.extend({
 			o.value('masque', 'MASQUE (recommended)');
 			o.value('wg', 'WireGuard');
 			o.value('gool', 'WARP-in-WARP');
+			if (supportsV20)
+				o.value('mim', 'MASQUE-in-MASQUE');
 			o.default = 'masque';
 			var protocolOpt = o;
 			var masqueOptionOpts = [];
@@ -718,6 +841,17 @@ return view.extend({
 			} else if (!supportsV17) {
 				el.appendChild(E('div', { 'class': 'alert-message warning' },
 					'Aether v1.6 compatibility mode: upstream proxy chaining requires core v1.7.0 or newer.'));
+			}
+			if (supportsV20) {
+				el.appendChild(E('div', { 'class': 'alert-message notice' },
+					'Aether Core v2.0.0 compatibility mode: MASQUE-in-MASQUE, QUIC v2 controls, and Tor are available.'));
+			}
+			if (!supportsV18) {
+				el.appendChild(E('div', { 'class': 'alert-message warning' },
+					'Aether v1.7 compatibility mode: the performance profile requires core v1.8.0 or newer.'));
+			} else if (!supportsV19) {
+				el.appendChild(E('div', { 'class': 'alert-message warning' },
+					'Aether v1.8 compatibility mode: dual-hop gool endpoints require core v1.9.0 or newer.'));
 			}
 
 			s = m.section(form.NamedSection, 'main', 'aether', 'Network');
@@ -823,6 +957,20 @@ return view.extend({
 
 			s = m.section(form.NamedSection, 'main', 'aether', 'MASQUE Options');
 
+			if (supportsV20) {
+				o = s.option(form.Flag, 'quic_v2', 'Use QUIC v2 Opener',
+					'Enabled by default for HTTP/3. Disable only when the v2 opener is incompatible with your network.');
+				o.default = '1';
+				masqueOptionOpts.push(o);
+			}
+
+			if (supportsV19) {
+				o = s.option(form.Value, 'ech', 'Encrypted Client Hello (ECH)',
+					'Leave empty for the core default. Use auto or paste a base64 ECH configuration.');
+				o.rmempty = true;
+				masqueOptionOpts.push(o);
+			}
+
 			o = s.option(form.Flag, 'http2_mode', 'HTTP/2 Mode',
 				'Enable if UDP/QUIC is blocked');
 			o.default = '0';
@@ -884,6 +1032,7 @@ return view.extend({
 				o.default = '30';
 				o.datatype = 'min(1)';
 				o.depends('protocol', 'masque');
+				o.depends('protocol', 'mim');
 			}
 
 			o = s.option(form.Flag, 'quick_reconnect', 'Quick Reconnect',
@@ -917,6 +1066,90 @@ return view.extend({
 			o.default = '3';
 			o.datatype = 'range(2,10)';
 			o.depends('watchdog_enabled', '1');
+
+			if (supportsV18) {
+				o = s.option(form.ListValue, 'perf_profile', 'Performance Profile',
+					'Core resource profile.');
+				o.value('low', 'Low');
+				o.value('medium', 'Medium');
+				o.value('high', 'High');
+				o.default = 'low';
+				o.rmempty = false;
+			}
+
+			if (supportsV19) {
+				o = s.option(form.Value, 'wiw_outer', 'gool Outer Hop',
+					'Outer WARP-in-WARP endpoint (ip:port), the one your network sees. Leave empty to auto-scan.');
+				o.datatype = 'ipaddrport(1)';
+				o.rmempty = true;
+				o.depends('protocol', 'gool');
+
+				o = s.option(form.Value, 'wiw_inner', 'gool Inner Hop',
+					'Inner WARP-in-WARP endpoint (ip:port). Leave empty to auto-scan.');
+				o.datatype = 'ipaddrport(1)';
+				o.rmempty = true;
+				o.depends('protocol', 'gool');
+			}
+
+			if (supportsV20) {
+				o = s.option(form.Value, 'mim_outer', 'MIM Outer Hop',
+					'Outer MASQUE-in-MASQUE endpoint (ip:port). Leave empty to auto-scan.');
+				o.datatype = 'ipaddrport(1)';
+				o.rmempty = true;
+				o.depends('protocol', 'mim');
+
+				o = s.option(form.Value, 'mim_inner', 'MIM Inner Hop',
+					'Inner MASQUE-in-MASQUE endpoint (ip:port). Leave empty to auto-select.');
+				o.datatype = 'ipaddrport(1)';
+				o.rmempty = true;
+				o.depends('protocol', 'mim');
+
+				o = s.option(form.Value, 'mim_peers', 'MIM Peers',
+					'Optional outer[,inner] ip:port endpoint pair. Leave empty to auto-scan.');
+				o.rmempty = true;
+				o.depends('protocol', 'mim');
+
+				s = m.section(form.NamedSection, 'main', 'aether', 'Tor (Core v2)');
+				o = s.option(form.ListValue, 'tor_mode', 'Tor Mode');
+				o.value('off', 'Off');
+				o.value('tunnel', 'Tor through WARP');
+				o.value('reverse', 'WARP through Tor (MASQUE only)');
+				o.value('only', 'Tor only (no WARP tunnel)');
+				o.default = 'off';
+
+				o = s.option(form.Value, 'tor_bind', 'Tor SOCKS5 Listen Address');
+				o.default = '127.0.0.1:1820';
+				o.datatype = 'ipaddrport';
+				o.depends('tor_mode', 'tunnel');
+				o.depends('tor_mode', 'reverse');
+
+				o = s.option(form.Value, 'tor_dir', 'Tor State Directory');
+				o.rmempty = true;
+				o.depends('tor_mode', /^(tunnel|reverse|only)$/);
+
+				o = s.option(form.ListValue, 'tor_bridges', 'Tor Bridge Policy');
+				o.value('auto', 'Automatic fallback');
+				o.value('on', 'Use bridges immediately');
+				o.value('off', 'Never use bridges');
+				o.default = 'auto';
+				o.depends('tor_mode', /^(tunnel|reverse|only)$/);
+			}
+			s = m.section(form.NamedSection, 'main', 'aether', 'Custom Command',
+				'Take full control of the core command line. Generated mode shows the running command read-only; switch to Manual to type your own arguments (space-separated, no quotes). Manual commands still launch through aether-run, so Zero Trust secrets stay out of process listings. Applies on restart.');
+
+			o = s.option(form.ListValue, 'command_mode', 'Command Mode');
+			o.value('generated', 'Generated (recommended)');
+			o.value('manual', 'Manual');
+			o.default = 'generated';
+
+			o = s.option(form.DummyValue, '_generated_cmd', 'Generated Command');
+			o.cfgvalue = function(section_id) { return (st.command || []).join(' '); };
+			o.depends('command_mode', 'generated');
+
+			o = s.option(form.TextValue, 'custom_command', 'Manual Arguments');
+			o.rows = 5;
+			o.rmempty = true;
+			o.depends('command_mode', 'manual');
 
 			return m.render().then(function(formNode) {
 				el.appendChild(formNode);

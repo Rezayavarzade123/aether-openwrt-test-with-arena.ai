@@ -14,11 +14,11 @@
 #   --force-config   Overwrite existing /etc/config/aether
 #   --no-curl        Skip curl installation
 #   --version <tag>  Install a specific Aether core release (v1.5.0 or newer)
-#   --non-interactive  Do not prompt; defaults to v1.7.0
+#   --non-interactive  Do not prompt; defaults to v2.0.0
 
 # No set -e — we handle errors explicitly with || blocks and error() calls.
 umask 077
-CLIENT_VERSION="v0.5.1"
+CLIENT_VERSION="v0.8.0"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -32,6 +32,23 @@ success() { printf "${GREEN}[+]${RESET} %s\n" "$*"; }
 warn()    { printf "${YELLOW}[!]${RESET} %s\n" "$*"; }
 error()   { printf "${RED}[-]${RESET} %s\n" "$*" >&2; }
 
+
+# Automatic performance profile from total RAM:
+# <256MB -> low, 256MB-768MB -> medium, >768MB -> high
+select_perf_profile() {
+    local total_kb
+    total_kb="$(awk '/^MemTotal/ {print $2}' /proc/meminfo 2>/dev/null)"
+    case "$total_kb" in
+        ''|*[!0-9]*) echo "low"; return ;;
+    esac
+    if [ "$total_kb" -lt 262144 ]; then
+        echo "low"
+    elif [ "$total_kb" -lt 786432 ]; then
+        echo "medium"
+    else
+        echo "high"
+    fi
+}
 # --- Parse arguments ---
 START_NOW=0
 FORCE_CONFIG=0
@@ -95,7 +112,7 @@ esac
 
 REPO="CluvexStudio/Aether"
 API_URL="https://api.github.com/repos/${REPO}/releases?per_page=30"
-DEFAULT_VERSION="v1.7.0"
+DEFAULT_VERSION="v2.0.0"
 
 echo ""
 echo "========================================="
@@ -256,6 +273,10 @@ if [ -z "$BINARY" ] || [ ! -f "$BINARY" ]; then
     exit 1
 fi
 
+# Core v2 Tor-enabled archives also carry the lyrebird pluggable transport.
+# Keep it beside the core binary: Arti discovers the helper under /usr/bin/pt.
+PT_BINARY=$(find "$TMP_DIR" -type f -path "*/pt/lyrebird" | head -n1)
+
 chmod +x "$BINARY"
 success "Binary: $($BINARY --version 2>&1)"
 
@@ -355,10 +376,34 @@ cp -f "$BINARY" /usr/bin/aether && chmod 755 /usr/bin/aether || {
 }
 success "Installed /usr/bin/aether"
 
+if [ -n "$PT_BINARY" ] && [ -f "$PT_BINARY" ]; then
+    mkdir -p /usr/bin/pt || {
+        error "Failed to create /usr/bin/pt for the Tor pluggable transport"
+        exit 1
+    }
+    cp -f "$PT_BINARY" /usr/bin/pt/lyrebird &&
+        chmod 755 /usr/bin/pt/lyrebird || {
+        error "Failed to install /usr/bin/pt/lyrebird"
+        exit 1
+    }
+    success "Installed /usr/bin/pt/lyrebird"
+fi
+
 if [ -f /etc/config/aether ] && [ "$FORCE_CONFIG" -eq 0 ]; then
     warn "Keeping existing /etc/config/aether"
+    existing_perf="$(uci -q get aether.main.perf_profile 2>/dev/null)"
+    if [ -z "$existing_perf" ]; then
+        detected_perf="$(select_perf_profile)"
+        uci set aether.main.perf_profile="$detected_perf" 2>/dev/null &&
+            uci commit aether 2>/dev/null &&
+            info "Initialized perf_profile = $detected_perf (auto-detected from RAM)"
+    fi
 else
     install_staged "etc/config/aether" 600 || exit 1
+    detected_perf="$(select_perf_profile)"
+    uci set aether.main.perf_profile="$detected_perf" 2>/dev/null &&
+        uci commit aether 2>/dev/null &&
+        info "Configured perf_profile = $detected_perf (auto-detected from RAM)"
 fi
 chmod 600 /etc/config/aether || {
     error "Failed to protect /etc/config/aether"
