@@ -36,6 +36,11 @@ identity_sibling() {
 
 # v1.6 introduced HTTP CONNECT, the MASQUE startup deadline, and core log
 # controls. v1.7 added upstream proxy chaining (--upstream).
+# v2.1 added Psiphon modes, exit-location pinning (--exit-loc), traffic
+# stats (--stats), Tor relay sources (--tor-relays), and the Tor HTTP
+# listener (--tor-http). v2.3 changed gool to a MASQUE-carried tunnel with
+# --gool-classic selecting the older WARP-in-WARP, and added --gool-peer
+# plus the verified scan mode.
 # Newer core versions inherit the latest capability set until a later version
 # receives an explicit compatibility profile here.
 core_version() {
@@ -92,6 +97,27 @@ core_supports_v20() {
 	local version="$1" major
 	major="${version%%.*}"
 	[ "$major" -ge 2 ] 2>/dev/null
+}
+
+# v2.1 adds Psiphon, --exit-loc, --stats, --tor-relays, and --tor-http.
+core_supports_v21() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 2 ] 2>/dev/null ||
+		{ [ "$major" -eq 2 ] 2>/dev/null && [ "$minor" -ge 1 ] 2>/dev/null; }
+}
+
+# v2.3 makes gool MASQUE-carried (--gool-classic is the old WARP-in-WARP),
+# adds --gool-peer, and registers the verified scan mode.
+core_supports_v23() {
+	local version="$1" major minor rest
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	[ "$major" -gt 2 ] 2>/dev/null ||
+		{ [ "$major" -eq 2 ] 2>/dev/null && [ "$minor" -ge 3 ] 2>/dev/null; }
 }
 
 # Automatic performance profile from total RAM. Thresholds follow the
@@ -166,9 +192,13 @@ start_service() {
 	local no_profile_retry team access_id access_secret access_token
 	local upstream_proxy perf_profile wiw_outer wiw_inner mim_outer mim_inner mim_peers
 	local quic_v2 ech tor_mode tor_bind tor_dir tor_bridges masque_identity_path
+	local tor_http tor_relays exit_loc stats
+	local psiphon_mode psiphon_bind psiphon_http psiphon_region psiphon_shape
+	local gool_carrier gool_peer
 	local command_mode custom_command
 	local manual_args
 	local installed_version supports_v16 supports_v17 supports_v18 supports_v19 supports_v20
+	local supports_v21 supports_v23
 
 	installed_version="$(core_version)"
 	if [ -z "$installed_version" ]; then
@@ -201,6 +231,16 @@ start_service() {
 	else
 		supports_v20=0
 	fi
+	if core_supports_v21 "$installed_version"; then
+		supports_v21=1
+	else
+		supports_v21=0
+	fi
+	if core_supports_v23 "$installed_version"; then
+		supports_v23=1
+	else
+		supports_v23=0
+	fi
 	config_get protocol main protocol 'masque'
 	config_get socks_listen main socks_listen '0.0.0.0:1819'
 	config_get http_proxy main http_proxy ''
@@ -216,6 +256,17 @@ start_service() {
 	config_get tor_bind main tor_bind '127.0.0.1:1820'
 	config_get tor_dir main tor_dir ''
 	config_get tor_bridges main tor_bridges 'auto'
+	config_get tor_http main tor_http ''
+	config_get tor_relays main tor_relays 'auto'
+	config_get exit_loc main exit_loc ''
+	config_get stats main stats '0'
+	config_get psiphon_mode main psiphon_mode 'off'
+	config_get psiphon_bind main psiphon_bind '127.0.0.1:1821'
+	config_get psiphon_http main psiphon_http ''
+	config_get psiphon_region main psiphon_region ''
+	config_get psiphon_shape main psiphon_shape 'auto'
+	config_get gool_carrier main gool_carrier 'masque'
+	config_get gool_peer main gool_peer ''
 	config_get command_mode main command_mode 'generated'
 	config_get custom_command main custom_command ''
 	config_get upstream_proxy main upstream_proxy ''
@@ -327,9 +378,19 @@ start_service() {
 	fi
 	# Core v1.9+ dual-hop gool endpoints. Named hops are kept across
 	# reconnects by the core; unnamed hops are scanned as before.
+	# Core v2.3+ renamed the transport: --gool carries WARP over MASQUE and
+	# any named --wiw-* endpoint would silently select the classic
+	# WARP-in-WARP carrier. Pass classic endpoints only when the operator
+	# chose the classic carrier (or on cores where classic is the only gool).
 	if [ "$supports_v19" -eq 1 ] && [ "$protocol" = "gool" ]; then
-		[ -n "$wiw_outer" ] && procd_append_param command --wiw-outer "$wiw_outer"
-		[ -n "$wiw_inner" ] && procd_append_param command --wiw-inner "$wiw_inner"
+		if [ "$supports_v23" -eq 1 ] && [ "$gool_carrier" != "classic" ]; then
+			if [ -n "$wiw_outer" ] || [ -n "$wiw_inner" ]; then
+				logger -t aether "Ignoring classic WARP-in-WARP endpoints: set gool_carrier=classic to use them on core v$installed_version"
+			fi
+		else
+			[ -n "$wiw_outer" ] && procd_append_param command --wiw-outer "$wiw_outer"
+			[ -n "$wiw_inner" ] && procd_append_param command --wiw-inner "$wiw_inner"
+		fi
 	fi
 	# Core v2 MASQUE-in-MASQUE endpoints are separate from gool endpoints.
 	if [ "$supports_v20" -eq 1 ] && [ "$protocol" = "mim" ]; then
@@ -348,6 +409,17 @@ start_service() {
 			;;
 		gool)
 			procd_append_param command --gool
+			# Core v2.3+: --gool is MASQUE-carried by default;
+			# --gool-classic restores the older WireGuard-in-WireGuard
+			# carrier, and --gool-peer pins the inner WireGuard endpoint
+			# of the MASQUE-carried tunnel.
+			if [ "$supports_v23" -eq 1 ]; then
+				if [ "$gool_carrier" = "classic" ]; then
+					procd_append_param command --gool-classic
+				elif [ -n "$gool_peer" ]; then
+					procd_append_param command --gool-peer "$gool_peer"
+				fi
+			fi
 			case "$obfuscation_profile" in balanced|aggressive|light|off) ;; *) obfuscation_profile=balanced ;; esac
 			;;
 		mim)
@@ -370,6 +442,16 @@ start_service() {
 	case "$scan_mode" in
 		turbo|balanced|thorough|stealth|ironclad)
 			procd_append_param command --scan "$scan_mode" ;;
+		verified)
+			# Core v2.1+ only: dial only edges measured to answer
+			# connect-ip. Older cores would reject the value.
+			if [ "$supports_v21" -eq 1 ]; then
+				procd_append_param command --scan verified
+			else
+				logger -t aether "Ignoring scan_mode=verified: Aether v$installed_version requires v2.1.0 or newer; using balanced"
+				procd_append_param command --scan balanced
+			fi
+			;;
 	esac
 
 	case "$ip_version" in
@@ -377,6 +459,15 @@ start_service() {
 		ipv6)  procd_append_param command -6 ;;
 		both)  procd_append_param command --dual ;;
 	esac
+
+	# Core v2.1+ exit-country pinning and traffic stats logging. Both are
+	# off unless configured, matching the core defaults.
+	if [ "$supports_v21" -eq 1 ]; then
+		[ -n "$exit_loc" ] && procd_append_param command --exit-loc "$exit_loc"
+		[ "$stats" = "1" ] && procd_append_param command --stats
+	elif [ -n "$exit_loc" ] || [ "$stats" = "1" ]; then
+		logger -t aether "Ignoring exit_loc/stats: Aether v$installed_version requires v2.1.0 or newer"
+	fi
 
 	[ -n "$obfuscation_profile" ] && procd_append_param command --noize "$obfuscation_profile"
 	if [ "$protocol" = "masque" ] || [ "$protocol" = "mim" ]; then
@@ -439,7 +530,51 @@ start_service() {
 				on) procd_append_param command --tor-bridges ;;
 				off) procd_append_param command --no-tor-bridges ;;
 			esac
+			if [ "$supports_v21" -eq 1 ]; then
+				[ -n "$tor_http" ] && procd_append_param command --tor-http "$tor_http"
+				case "$tor_relays" in
+					''|auto) ;;
+					only|off) procd_append_param command --tor-relays "$tor_relays" ;;
+					*[!0-9]*)
+						logger -t aether "Ignoring invalid tor_relays: $tor_relays (use auto/only/off or a count)" ;;
+					*) procd_append_param command --tor-relays "$tor_relays" ;;
+				esac
+			fi
 		fi
+	fi
+	# Core v2.1+ embedded Psiphon, mirroring the Tor mode structure.
+	# psiphon-reverse dials the tunnel through Psiphon, which carries TCP
+	# only, so like Tor reverse it requires MASQUE.
+	if [ "$supports_v21" -eq 1 ]; then
+		case "$psiphon_mode" in
+			off|'') ;;
+			tunnel) procd_append_param command --psiphon ;;
+			reverse)
+				[ "$protocol" = "masque" ] || {
+					logger -t aether "ERROR: Psiphon reverse mode requires MASQUE"
+					procd_close_instance
+					return 1
+				}
+				procd_append_param command --psiphon-reverse ;;
+			only) procd_append_param command --psiphon-only ;;
+			*)
+				logger -t aether "ERROR: invalid Psiphon mode: $psiphon_mode"
+				procd_close_instance
+				return 1 ;;
+		esac
+		if [ "$psiphon_mode" = "tunnel" ] || [ "$psiphon_mode" = "reverse" ]; then
+			[ -n "$psiphon_bind" ] && procd_append_param command --psiphon-bind "$psiphon_bind"
+		fi
+		[ -n "$psiphon_http" ] && procd_append_param command --psiphon-http "$psiphon_http"
+		[ -n "$psiphon_region" ] && procd_append_param command --psiphon-region "$psiphon_region"
+		case "$psiphon_shape" in
+			auto|'') ;;
+			cdn|direct) procd_append_param command --psiphon-mode "$psiphon_shape" ;;
+			*)
+				logger -t aether "Ignoring invalid psiphon_shape: $psiphon_shape (use auto/cdn/direct)" ;;
+		esac
+	elif [ "$psiphon_mode" != "off" ] && [ -n "$psiphon_mode" ]; then
+		logger -t aether "Ignoring psiphon_mode=$psiphon_mode: Aether v$installed_version requires v2.1.0 or newer"
 	fi
 	finish_service_instances
 }

@@ -4,7 +4,7 @@
 
 # Aether OpenWrt Client
 
-**نسخه کلاینت: v0.8.0**
+**نسخه کلاینت: v0.9.0**
 
 اینتگریشن OpenWrt برای [Aether](https://github.com/CluvexStudio/Aether) — یک کلاینت دور زدن سانسور.
 
@@ -26,7 +26,7 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 در حین نصب از شما پرسیده می‌شود:
 
 - **نسخه هسته Aether**: حداکثر پنج ریلیز پایدار از v1.5.0 به بعد نمایش داده
-  می‌شود. با Enter نسخه پیش‌فرض v2.0.0 انتخاب می‌شود؛ می‌توانید یک گزینه یا
+  می‌شود. با Enter نسخه پیش‌فرض v2.3.0 انتخاب می‌شود؛ می‌توانید یک گزینه یا
   نسخه معتبر v1.5.0 به بعد را وارد کنید.
 - **curl نصب شود؟** به صورت پیش‌فرض **بله**. curl برای تست اتصال در LuCI و
   watchdog بازیابی تونل لازم است. با `--no-curl` از آن صرف‌نظر کنید؛ تونل کار
@@ -42,11 +42,11 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 
 ## قابلیت‌ها
 
-- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip|check-tor` (با نام مستعار `tor-ip` و خروجی `Tor: true|false IP:`)، `aether-ctl change-version <vX.Y.Z>`، `aether-ctl passwall <…>`، گزینه‌های عملکرد/gool و تنظیمات MIM، QUIC v2، ECH و Tor در v2. `set` مقدارها را اعتبارسنجی می‌کند (`tor_bind` به شکل `ip:port`، `tor_dir` مطلق، و `reverse` فقط با MASQUE)؛ `status` و `show` تنظیم مؤثر را نیز نشان می‌دهند؛ مثلاً `balanced (stored firewall)`.
+- **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip|check-tor|check-psiphon` (با نام‌های مستعار `tor-ip`/`psiphon-ip` و خروجی‌های `Tor: true|false IP:` و `Psiphon: <ip> (<country>)`)، `aether-ctl change-version <vX.Y.Z>`، `aether-ctl passwall <…>`، گزینه‌های عملکرد/gool و تنظیمات MIM، QUIC v2، ECH، Tor، Psiphon، محدودسازی کشور خروج و آمار ترافیک. `set` مقدارها را اعتبارسنجی می‌کند (`tor_bind` به شکل `ip:port`، `tor_dir` مطلق، `exit_loc` به شکل فهرست کشورها، و `reverse` فقط با MASQUE)؛ `status` و `show` تنظیم مؤثر را نیز نشان می‌دهند؛ مثلاً `balanced (stored firewall)`.
 - **LuCI**: Services -> Aether
-  - جدول وضعیت (وضعیت، نسخه، endpoint، transport، آدرس SOCKS5 و وضعیت پیکربندی Tor)
+  - جدول وضعیت (وضعیت، نسخه، endpoint، transport، آدرس SOCKS5 و وضعیت پیکربندی Tor و Psiphon)
   - دکمه‌های Start / Stop / Restart
-  - دکمه‌های تست اتصال با زمان‌بندی دقیق میلی‌ثانیه، بررسی IP عمومی و کشور و بررسی خروجی Tor (هنگام فعال بودن Tor)
+  - دکمه‌های تست اتصال با زمان‌بندی دقیق میلی‌ثانیه، بررسی IP عمومی و کشور، بررسی خروجی Tor (هنگام فعال بودن Tor) و بررسی خروجی Psiphon (هنگام فعال بودن Psiphon)
   - لاگ‌های زنده بلادرنگ (به‌روزرسانی خودکار، توقف/ادامه، اسکرول خودکار)
   - یکپارچگی Passwall2 (زیر بخش Advanced): هشدار در صورت پروکسی شدن ترافیک خود روتر توسط Passwall2، غیرفعال‌سازی با یک کلیک و ساخت با یک کلیک نود socks اشاره‌کننده به Aether
   - پیکربندی کامل (پروتکل، حالت اسکن، obfuscation، HTTP/2 و غیره)
@@ -58,6 +58,8 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
   SOCKS5/HTTP پیش از رسیدن به Cloudflare (از طریق پرچم `--upstream`)
 - **ECH** (هسته v1.9+): پیکربندی اختیاری Encrypted ClientHello
 - **هسته v2**: MASQUE-in-MASQUE، کنترل انتخابی QUIC v2 و حالت‌های Tor برای بسته‌های هسته دارای Tor
+- **هسته v2.1+**: حالت‌های Psiphon (از طریق WARP، معکوس یا فقط Psiphon روی `127.0.0.1:1821`)، محدودسازی کشور خروج (`exit_loc` مانند `!IR,AZ,RU`)، ثبت آمار ترافیک (`stats`)، منابع رله Tor (`tor_relays`) و شنونده اضافی HTTP/CONNECT برای Tor (`tor_http`) و حالت اسکن `verified`
+- **هسته v2.3+**: انتخاب حامل gool — gool جدید داخل MASQUE (`--gool`، پیش‌فرض) یا WARP-in-WARP کلاسیک (`gool_carrier=classic` / `--gool-classic`) با endpointهای کلاسیک `wiw_*`، به همراه `gool_peer` برای endpoint داخلی WireGuard
 - **Zero Trust**: اتصال headless به سازمان با Access service token
 - **معماری**: x86_64، arm64، armv7 (باینری‌های استاتیک musl)
 
@@ -69,7 +71,7 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 /tmp/aether-install.sh --force-config  # بازنویسی کانفیگ موجود
 /tmp/aether-install.sh --no-curl       # رد شدن از پرامپت نصب curl
 /tmp/aether-install.sh --version v1.5.0 --start
-/tmp/aether-install.sh --non-interactive --start  # نسخه v2.0.0 بدون پرامپت
+/tmp/aether-install.sh --non-interactive --start  # نسخه v2.3.0 بدون پرامپت
 ```
 
 ## حذف نصب
@@ -93,14 +95,20 @@ aether-ctl log              # نمایش لاگ‌های اخیر
 aether-ctl test google.com  # تست اتصال از طریق تونل (نیاز به curl)
 aether-ctl check-ip         # بررسی IP عمومی، کشور و پینگ (ipwho.is)
 aether-ctl check-tor        # بررسی IP خروجی Tor و IsTor (هسته v2.0.0+ با یکی از حالت‌های Tor)
+aether-ctl check-psiphon    # بررسی IP خروجی Psiphon (هسته v2.1+ با یکی از حالت‌های Psiphon)
 aether-ctl passwall status            # نمایش وضعیت Passwall2 و نودهای مرتبط
 aether-ctl passwall localhost off     # توقف پروکسی ترافیک خود روتر توسط Passwall2
 aether-ctl passwall add-node          # ساخت نود socks اشاره‌کننده به Aether
 aether-ctl version
-aether-ctl update                       # دریافت updater جدید کلاینت؛ پیش‌فرض هسته v2.0.0 باقی می‌ماند
+aether-ctl update                       # دریافت updater جدید کلاینت؛ پیش‌فرض هسته v2.3.0 باقی می‌ماند
 aether-ctl change-version v1.5.0 --start
 aether-ctl update --version v1.5.0 --start
 aether-ctl set tor_mode tunnel            # Tor از طریق WARP (نیازمند بسته Tor در v2.0.0+)
+aether-ctl set psiphon_mode tunnel        # Psiphon از طریق WARP (v2.1+)
+aether-ctl set psiphon_region DE          # درخواست خروجی Psiphon در آلمان (v2.1+)
+aether-ctl set exit_loc '!IR,AZ,RU'       # رد کردن خروجی در آن کشورها (v2.1+)
+aether-ctl set stats 1                    # ثبت آمار ترافیک هر دقیقه (v2.1+)
+aether-ctl set gool_carrier classic       # gool کلاسیک WARP-in-WARP (v2.3.0+)
 aether-ctl set command_mode manual        # استفاده از آرگومان‌های دلخواه هسته
 aether-ctl set custom_command '--bind 0.0.0.0:1819 --wg'  # آرگومان‌های جداشده با فاصله
 ```
@@ -111,7 +119,7 @@ aether-ctl set custom_command '--bind 0.0.0.0:1819 --wg'  # آرگومان‌ه�
 دوباره اجرا می‌کند. کانفیگ `/etc/config/aether` و هویت‌های معتبر `/etc/aether`
 حفظ می‌شوند، مگر این‌که `--force-config` داده شود. فایل هسته همیشه با SHA-256
 ریلیز رسمی بررسی می‌شود. کلاینت از هسته v1.5.0 و جدیدتر پشتیبانی می‌کند و
-پیش‌فرض آن v2.0.0 است. پیش از شروع سرویس و پیش از رندر رابط LuCI، نسخه هسته
+پیش‌فرض آن v2.3.0 است. پیش از شروع سرویس و پیش از رندر رابط LuCI، نسخه هسته
 تشخیص داده می‌شود. در v1.5، گزینه‌های مخصوص v1.6 شامل HTTP CONNECT proxy،
 MASQUE startup deadline و کنترل سطح لاگ نمایش داده نشده و به هسته ارسال
 نمی‌شوند. نسخه‌های v1.6 پروفایل قابلیت v1.6 را دارند و نسخه‌های v1.7 زنجیره
@@ -126,6 +134,19 @@ UCI `wiw_outer` و `wiw_inner`؛ خالی = اسکن هر دو مرحله توس
 انتخابی QUIC v2 و کنترل‌های Tor را اضافه می‌کند. Tor به بسته‌ای از هسته نیاز دارد
 که با قابلیت Tor کامپایل شده باشد؛ کلاینت کنترل‌ها را بر اساس نسخه هسته نمایش
 می‌دهد، اما این قابلیت build را از پیش تشخیص نمی‌دهد.
+هسته v2.1.0 و جدیدتر Psiphon داخلی را اضافه می‌کند (`psiphon_mode` به همراه
+`psiphon_bind`/`psiphon_http`/`psiphon_region`/`psiphon_shape`؛ آرشیوهای رسمی
+ریلیز، برنامه کمکی `psiphon-tunnel-core` را در پوشه `pt/` همراه باینری قرار
+می‌دهند)، محدودسازی کشور خروج (`exit_loc`)، ثبت آمار ترافیک (`stats`)، منابع
+رله Tor (`tor_relays`)، شنونده HTTP/CONNECT تور (`tor_http`) و حالت اسکن
+`verified`.
+هسته v2.3.0 و جدیدتر gool را به تونل WARP داخل MASQUE تغییر می‌دهد.
+`gool_carrier=masque` (پیش‌فرض) از `--gool` جدید با `gool_peer` اختیاری استفاده
+می‌کند و `gool_carrier=classic` با `--gool-classic` و endpointهای کلاسیک
+`wiw_*` حالت قدیمی WARP-in-WARP را برمی‌گرداند. چون نام‌بردن از یک endpoint
+`wiw_*` در v2.3+ به‌تنهایی حامل کلاسیک را انتخاب می‌کند، کلاینت مقادیر `wiw_*`
+را فقط وقتی `gool_carrier=classic` است (یا روی هسته‌هایی که فقط gool کلاسیک
+دارند) به هسته می‌فرستد.
 
 ## رابط وب LuCI
 
@@ -134,9 +155,9 @@ UCI `wiw_outer` و `wiw_inner`؛ خالی = اسکن هر دو مرحله توس
 ![رابط وب LuCI](screenshots/luci.png)
 
 قابلیت‌ها:
-- جدول وضعیت (وضعیت، نسخه، endpoint، transport و وضعیت پیکربندی Tor)
+- جدول وضعیت (وضعیت، نسخه، endpoint، transport و وضعیت پیکربندی Tor و Psiphon)
 - دکمه‌های Start / Stop / Restart
-- دکمه‌های تست اتصال (google.com، youtube.com، github.com، telegram.org) با زمان دقیق ms، بررسی IP عمومی و بررسی خروجی Tor
+- دکمه‌های تست اتصال (google.com، youtube.com، github.com، telegram.org) با زمان دقیق ms، بررسی IP عمومی، بررسی خروجی Tor و بررسی خروجی Psiphon
 - بخش Custom Command (پیش‌نمایش فرمان تولیدشده فعلی / آرگومان‌های دستی هسته)
 - لاگ‌های زنده بلادرنگ (به‌روزرسانی خودکار هر 2 ثانیه، بدون نیاز به رفرش دستی)
 - توقف/ادامه استریم لاگ
@@ -210,6 +231,11 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
   وصل نمی‌شود، در `logread -e aether` دنبال خطای permission بگردید؛ سرویس در
   شروع، مالکیت و modeهای `/` و `/etc` را ترمیم می‌کند. با `aether-ctl check-tor`
   بررسی کنید (خروجی موفق: `Tor: true IP: …`).
+- Psiphon (هسته v2.1+): آرشیوهای رسمی ریلیز، برنامه کمکی `psiphon-tunnel-core`
+  را در پوشه `pt/` کنار باینری قرار می‌دهند؛ نصب‌کننده آن پوشه را در
+  `/usr/bin/pt` نگه می‌دارد. `psiphon_mode=tunnel` شنونده SOCKS5 دومی روی
+  `127.0.0.1:1821` می‌سازد (خروجی WARP روی `:1819` اصلی می‌ماند)؛ با
+  `aether-ctl check-psiphon` بررسی کنید.
 - حالت فرمان دستی همه گزینه‌های UCI، از جمله Tor، را دور می‌زند. می‌توانید کل
   فرمان یا آرگومان‌های مستقل را paste کنید؛ `/usr/bin/aether(-run)` ابتدای فرمان
   خودکار حذف می‌شود. probeها bind فرمان دستی را می‌خوانند و بدون `--tor`،

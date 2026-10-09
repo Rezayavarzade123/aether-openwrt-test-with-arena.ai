@@ -45,8 +45,13 @@ endpoint and avoids a full scan when possible.
   current runtime.
 - **Scan Mode**: `turbo` is fastest; `balanced` is the normal choice;
   `thorough`, `stealth`, and `ironclad` trade time for discovery or validation.
+  `verified` (core v2.1+) dials only edges measured to answer connect-ip.
 - **IP Version**: use IPv4 unless the router has working IPv6.
 - **Force Peer**: optionally skip scanning and use a known `ip:port`.
+- **Exit Location Policy** (core v2.1+): refuse tunnels whose exit country is
+  not wanted (e.g. `!IR,AZ,RU`); rechecked every minute through the tunnel.
+- **Traffic Stats Logging** (core v2.1+): log uploaded/downloaded bytes and
+  tunnel uptime every 60 seconds.
 - **HTTP/2 Mode** and **H2 Peer** apply to MASQUE and MIM. Use HTTP/2 when
   UDP/QUIC is blocked.
 - **TLS Fragmentation** applies to MASQUE/MIM HTTP/2 when its handshake is blocked.
@@ -224,6 +229,79 @@ refuses state whose ancestor directories are not root-owned or are
 group/world-writable (stock OpenWrt images and tar overlays both break this).
 The service repairs `/` and `/etc` automatically on every Tor-enabled start.
 
+### Tor additions on core v2.1+
+
+Two extra controls appear next to the Tor settings when the installed core is
+v2.1.0 or newer:
+
+- `tor_http` also serves Tor as an HTTP/CONNECT proxy on the given address,
+  for clients that cannot speak SOCKS5.
+- `tor_relays` selects where bridges come from: `auto` (default) fetches
+  bridgedb bridges and onionoo relays together, `only` uses onionoo relays
+  alone, `off` disables relays, and a number (e.g. `80`) sets how many relays
+  to measure. On a network that blocks Tor, core v2.1+ also fetches its
+  bridges through the finished tunnel, which is what makes Tor work there at
+  all.
+
+## Psiphon (core v2.1+)
+
+Core v2.1 embeds Psiphon the same way it embeds Tor, with three modes in
+`psiphon_mode`:
+
+- `tunnel` carries Psiphon inside WARP: the normal SOCKS5 listener keeps the
+  WARP exit and a second listener on `psiphon_bind` (default
+  `127.0.0.1:1821`) exits through Psiphon.
+- `reverse` dials the tunnel through Psiphon so WARP is reached from a
+  Psiphon exit; it requires the MASQUE protocol (Psiphon carries TCP only, so
+  the core runs MASQUE over HTTP/2) and is rejected against other protocols
+  in both directions at set time, like Tor reverse.
+- `only` serves plain Psiphon from the main SOCKS5 listener and does not
+  establish a WARP tunnel.
+
+Nothing else is required: credentials and the server list are built into the
+core, and the official release archives ship the `psiphon-tunnel-core` helper
+in the `pt/` folder next to the binary (the installer keeps it at
+`/usr/bin/pt`). Optional tuning: `psiphon_region` asks for an exit in a
+two-letter country (e.g. `DE`), `psiphon_shape` maps to `--psiphon-mode`
+(`auto` default, `cdn` limits to fronted meek through a CDN, `direct` turns
+fronting off), and `psiphon_http` also serves Psiphon as an HTTP/CONNECT
+proxy. Verify the exit with the LuCI **Check Psiphon IP** button or:
+
+```sh
+aether-ctl set psiphon_mode tunnel
+aether-ctl restart
+aether-ctl check-psiphon   # Psiphon exit IP (alias: psiphon-ip)
+```
+
+## Exit-location pinning and traffic stats (core v2.1+)
+
+`exit_loc` refuses tunnels whose exit country is not wanted: `!IR,AZ,RU`
+blocks those countries, `DE,SE` allows only those. The check runs through the
+finished tunnel before SOCKS5 opens and again every minute, so a tunnel that
+moves is dropped and replaced. Leave it empty (the default) and nothing is
+looked up.
+
+`stats` (off by default) logs uploaded/downloaded bytes and tunnel uptime to
+the service log every 60 seconds — watch with `logread -f -e aether`.
+
+## gool carrier choice (core v2.3+)
+
+Core v2.3 changed what `--gool` means: it now carries the WireGuard WARP
+tunnel inside MASQUE and registers its identity through the tunnel, so the
+exit address is foreign rather than local. The older WireGuard-in-WireGuard
+transport stays available as the classic carrier:
+
+- `gool_carrier=masque` (default) uses the new `--gool`; `gool_peer` can pin
+  the inner WireGuard endpoint.
+- `gool_carrier=classic` passes `--gool-classic` and uses the classic
+  `wiw_outer`/`wiw_inner` WARP-in-WARP endpoints.
+
+On cores older than v2.3 the carrier choice is ignored and gool stays classic.
+Because naming any `wiw_*` endpoint would make a v2.3+ core select the classic
+carrier on its own, the client passes stored `wiw_*` values only when the
+classic carrier is selected; with the MASQUE carrier they are reported as
+ignored in the service log.
+
 ## Custom Command Line
 
 The **Custom Command** section (last on the LuCI page) hands you the core
@@ -262,17 +340,25 @@ aether-ctl log 100
 aether-ctl test google.com
 aether-ctl check-ip                     # public IP, country, latency
 aether-ctl check-tor                    # Tor exit IP and IsTor status (v2+ Tor modes)
+aether-ctl check-psiphon                # Psiphon exit IP (v2.1+ Psiphon modes)
 aether-ctl passwall status            # Passwall2 bridge status
 aether-ctl passwall localhost off     # disable Passwall2 router-local proxying
 aether-ctl set protocol wg
 aether-ctl auto-perf                      # auto-detect RAM and set recommended profile (v1.8+)
 aether-ctl set perf_profile medium       # or set explicitly: low / medium / high (v1.8+)
-aether-ctl set wiw_outer 162.159.192.1:2408   # gool outer hop (v1.9+)
-aether-ctl set wiw_inner 188.114.96.1:2408    # gool inner hop (v1.9+)
+aether-ctl set wiw_outer 162.159.192.1:2408   # gool outer hop (v1.9+; classic carrier on v2.3+)
+aether-ctl set wiw_inner 188.114.96.1:2408    # gool inner hop (v1.9+; classic carrier on v2.3+)
 aether-ctl set protocol mim                     # MASQUE-in-MASQUE (v2+)
 aether-ctl set quic_v2 off                      # disable v2 QUIC opener (v2+)
 aether-ctl set ech auto                         # enable ECH discovery (v1.9+)
 aether-ctl set tor_mode tunnel                  # Tor through WARP (v2+)
+aether-ctl set tor_relays only                  # onionoo relays as bridges (v2.1+)
+aether-ctl set psiphon_mode tunnel              # Psiphon through WARP (v2.1+)
+aether-ctl set psiphon_region DE                # ask for a DE Psiphon exit (v2.1+)
+aether-ctl set exit_loc '!IR,AZ,RU'             # refuse exits in those countries (v2.1+)
+aether-ctl set stats 1                          # log traffic totals (v2.1+)
+aether-ctl set gool_carrier classic             # classic WARP-in-WARP gool (v2.3+)
+aether-ctl set gool_peer 188.114.97.1:2408      # inner endpoint of MASQUE-carried gool (v2.3+)
 aether-ctl set command_mode manual               # custom core arguments
 aether-ctl set custom_command '--bind 0.0.0.0:1819 --wg'  # space-separated
 aether-ctl passwall add-node          # create a socks node pointing at Aether
@@ -305,7 +391,7 @@ chmod +x /tmp/aether-install.sh
 ```
 
 The installer lists up to five newest stable core releases from v1.5.0 onward
-and defaults to v2.0.0. For automation use `--non-interactive`; add
+and defaults to v2.3.0. For automation use `--non-interactive`; add
 `--version vX.Y.Z` to choose a valid published release from v1.5.0 onward.
 `aether-ctl update` fetches the latest repository updater and runs the same
 installer flow; `aether-ctl change-version vX.Y.Z` is the explicit shortcut for

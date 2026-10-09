@@ -12,7 +12,7 @@
 'require ui';
 'require view';
 
-var AETHER_CLIENT_VERSION = 'v0.8.0';
+var AETHER_CLIENT_VERSION = 'v0.9.0';
 
 /* Obfuscation profiles from Aether core guide — depend on protocol. */
 var AETHER_PROFILES = {
@@ -85,6 +85,25 @@ function aetherCoreSupportsV19(version) {
 function aetherCoreSupportsV20(version) {
 	var m = String(version || '').match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)/);
 	return !!m && Number(m[1]) >= 2;
+}
+
+/* v2.1 added Psiphon modes, exit-location pinning (--exit-loc), traffic
+ * stats (--stats), Tor relay sources (--tor-relays), and the Tor HTTP
+ * listener (--tor-http). It also registered the verified scan mode. */
+function aetherCoreSupportsV21(version) {
+	var m = String(version || '').match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)/);
+	if (!m)
+		return false;
+	return Number(m[1]) > 2 || (Number(m[1]) === 2 && Number(m[2]) >= 1);
+}
+
+/* v2.3 made gool MASQUE-carried (--gool-classic restores WARP-in-WARP) and
+ * added --gool-peer for the inner WireGuard endpoint of the new carrier. */
+function aetherCoreSupportsV23(version) {
+	var m = String(version || '').match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)/);
+	if (!m)
+		return false;
+	return Number(m[1]) > 2 || (Number(m[1]) === 2 && Number(m[2]) >= 3);
 }
 
 function aetherSyncProfileChoices(profileOpt, section_id, protocol) {
@@ -242,7 +261,13 @@ function getServiceStatus() {
 		}).catch(function() { return ''; }),
 		callUCIGet('aether', 'main', 'tor_bind').then(function(r) {
 			return (r && r.value) ? String(r.value).replace(/'/g, '') : '127.0.0.1:1820';
-		}).catch(function() { return '127.0.0.1:1820'; })
+		}).catch(function() { return '127.0.0.1:1820'; }),
+		callUCIGet('aether', 'main', 'psiphon_mode').then(function(r) {
+			return (r && r.value) ? String(r.value).replace(/'/g, '') : 'off';
+		}).catch(function() { return 'off'; }),
+		callUCIGet('aether', 'main', 'psiphon_bind').then(function(r) {
+			return (r && r.value) ? String(r.value).replace(/'/g, '') : '127.0.0.1:1821';
+		}).catch(function() { return '127.0.0.1:1821'; })
 	]).then(function(r) {
 		var svc = r[0], logs = r[4], version = r[5];
 		return {
@@ -254,6 +279,8 @@ function getServiceStatus() {
 			version: version.replace(/^aether\s+/i, ''),
 			torMode: r[3],
 			torBind: r[6],
+			psiphonMode: r[7],
+			psiphonBind: r[8],
 			endpoint: extractFromLogs(logs, /using cloudflare edge ([0-9.:]+)/),
 			transport: extractFromLogs(logs, /MASQUE transport: ([^\s]+)/),
 			socks_addr: extractFromLogs(logs, /socks5 (?:server )?listening on ([^\s]+)/),
@@ -431,6 +458,59 @@ function doCheckTor() {
 	};
 }
 
+function doCheckPsiphon() {
+	return function() {
+		var btn = this;
+		var resultEl = document.getElementById('test-result-psiphon');
+		btn.disabled = true;
+		btn.value = 'Checking...';
+		if (resultEl) {
+			resultEl.textContent = 'Connecting...';
+			resultEl.style.color = '#888';
+		}
+
+		callFileExec('/usr/bin/aether-ctl', [ 'check-psiphon' ]
+		).then(function(r) {
+			var output = (r && r.stdout) ? r.stdout : '';
+			var errput = (r && r.stderr) ? r.stderr : '';
+			var combined = output + ' ' + errput;
+			var ipMatch = combined.match(/Psiphon:\s*(\S+)\s+\(([^)]*)\)\s+(\d+)ms/i);
+			var ipOnly = combined.match(/Psiphon:\s*(\S+)\s+(\d+)ms/i);
+			var failMatch = combined.match(/FAILED\s+(\d+)ms/i);
+
+			if (ipMatch) {
+				if (resultEl) {
+					resultEl.textContent = ipMatch[1] + ' (' + ipMatch[2] + ') \u2014 ' + ipMatch[3] + 'ms';
+					resultEl.style.color = '#2ecc71';
+				}
+			} else if (ipOnly) {
+				if (resultEl) {
+					resultEl.textContent = ipOnly[1] + ' \u2014 ' + ipOnly[2] + 'ms';
+					resultEl.style.color = '#2ecc71';
+				}
+			} else if (failMatch) {
+				if (resultEl) {
+					resultEl.textContent = 'Failed \u2014 ' + failMatch[1] + 'ms';
+					resultEl.style.color = '#e74c3c';
+				}
+			} else {
+				if (resultEl) {
+					resultEl.textContent = 'Failed';
+					resultEl.style.color = '#e74c3c';
+				}
+			}
+		}).catch(function() {
+			if (resultEl) {
+				resultEl.textContent = 'Error';
+				resultEl.style.color = '#e74c3c';
+			}
+		}).finally(function() {
+			btn.disabled = false;
+			btn.value = 'Check Psiphon IP';
+		});
+	};
+}
+
 /* Parse "key=value" lines emitted by `aether-ctl passwall status`. */
 function parseKeyValues(text) {
 	var out = {};
@@ -480,6 +560,8 @@ return view.extend({
 			var supportsV18 = aetherCoreSupportsV18(st.version);
 			var supportsV19 = aetherCoreSupportsV19(st.version);
 			var supportsV20 = aetherCoreSupportsV20(st.version);
+			var supportsV21 = aetherCoreSupportsV21(st.version);
+			var supportsV23 = aetherCoreSupportsV23(st.version);
 			var tbl = E('table', { 'class': 'table' });
 
 			function row(label, val) {
@@ -525,6 +607,19 @@ return view.extend({
 				}
 			} else {
 				row('Tor', 'Needs core v2.0+');
+			}
+
+			if (supportsV21) {
+				if (!st.psiphonMode || st.psiphonMode === 'off') {
+					row('Psiphon', 'Disabled');
+				} else if (st.psiphonMode === 'only') {
+					row('Psiphon', 'Enabled (Psiphon only, no WARP tunnel)');
+				} else {
+					var psiphonAddr = String(st.psiphonBind || '127.0.0.1:1821').replace(/0\.0\.0\.0/, '127.0.0.1');
+					row('Psiphon', E('span', {}, ['Enabled at ', E('code', {}, psiphonAddr)]));
+				}
+			} else {
+				row('Psiphon', 'Needs core v2.1+');
 			}
 
 			var btns = E('div', {
@@ -636,6 +731,28 @@ return view.extend({
 				torWrapper.appendChild(torBtn);
 				torWrapper.appendChild(torResult);
 				testRow.appendChild(torWrapper);
+			}
+
+			if (supportsV21 && (st.psiphonMode === 'tunnel' || st.psiphonMode === 'reverse' || st.psiphonMode === 'only')) {
+				var psiphonWrapper = E('div', {
+					'style': 'display:flex;align-items:center;gap:6px'
+				});
+
+				var psiphonBtn = E('input', {
+					'type': 'button',
+					'class': 'cbi-button cbi-button-apply',
+					'value': 'Check Psiphon IP',
+					'click': doCheckPsiphon()
+				});
+
+				var psiphonResult = E('span', {
+					'id': 'test-result-psiphon',
+					'style': 'font-size:13px;color:#888;min-width:140px'
+				}, '');
+
+				psiphonWrapper.appendChild(psiphonBtn);
+				psiphonWrapper.appendChild(psiphonResult);
+				testRow.appendChild(psiphonWrapper);
 			}
 
 			testSection.appendChild(testRow);
@@ -806,7 +923,7 @@ return view.extend({
 			o = s.option(form.ListValue, 'protocol', 'Protocol');
 			o.value('masque', 'MASQUE (recommended)');
 			o.value('wg', 'WireGuard');
-			o.value('gool', 'WARP-in-WARP');
+			o.value('gool', supportsV23 ? 'gool (WARP over MASQUE)' : 'WARP-in-WARP');
 			if (supportsV20)
 				o.value('mim', 'MASQUE-in-MASQUE');
 			o.default = 'masque';
@@ -846,6 +963,12 @@ return view.extend({
 				el.appendChild(E('div', { 'class': 'alert-message notice' },
 					'Aether Core v2.0.0 compatibility mode: MASQUE-in-MASQUE, QUIC v2 controls, and Tor are available.'));
 			}
+			if (supportsV21) {
+				el.appendChild(E('div', { 'class': 'alert-message notice' },
+					supportsV23
+						? 'Aether Core v2.3+ features available: Psiphon modes, exit-location pinning, traffic stats, Tor relay sources and HTTP listener, the verified scan mode, and the gool carrier choice (MASQUE-carried or classic WARP-in-WARP).'
+						: 'Aether Core v2.1+ features available: Psiphon modes, exit-location pinning, traffic stats, Tor relay sources and HTTP listener, and the verified scan mode.'));
+			}
 			if (!supportsV18) {
 				el.appendChild(E('div', { 'class': 'alert-message warning' },
 					'Aether v1.7 compatibility mode: the performance profile requires core v1.8.0 or newer.'));
@@ -857,10 +980,12 @@ return view.extend({
 			s = m.section(form.NamedSection, 'main', 'aether', 'Network');
 
 			o = s.option(form.ListValue, 'scan_mode', 'Scan Mode',
-				'turbo=fastest, balanced=default, thorough=best quality, stealth=quietest, ironclad=real tunnel test');
+				'turbo=fastest, balanced=default, thorough=best quality, verified=measured edges only (v2.1+), stealth=quietest, ironclad=real tunnel test');
 			o.value('turbo', 'Turbo');
 			o.value('balanced', 'Balanced (default)');
 			o.value('thorough', 'Thorough');
+			if (supportsV21)
+				o.value('verified', 'Verified (measured edges, v2.1+)');
 			o.value('stealth', 'Stealth');
 			o.value('ironclad', 'Ironclad (real tunnel test)');
 			o.default = 'balanced';
@@ -874,6 +999,16 @@ return view.extend({
 			o = s.option(form.Value, 'peer', 'Force Peer',
 				'ip:port, or leave empty for auto-scan');
 			o.rmempty = true;
+
+			if (supportsV21) {
+				o = s.option(form.Value, 'exit_loc', 'Exit Location Policy',
+					'Refuse tunnels whose exit country is not wanted, e.g. !IR,AZ,RU blocks those countries and DE,SE allows only those. Checked through the finished tunnel and rechecked every minute. Leave empty to disable.');
+				o.rmempty = true;
+
+				o = s.option(form.Flag, 'stats', 'Traffic Stats Logging',
+					'Log uploaded/downloaded bytes and tunnel uptime (every 60 seconds).');
+				o.default = '0';
+			}
 
 			s = m.section(form.NamedSection, 'main', 'aether', 'Obfuscation');
 
@@ -1079,16 +1214,31 @@ return view.extend({
 
 			if (supportsV19) {
 				o = s.option(form.Value, 'wiw_outer', 'gool Outer Hop',
-					'Outer WARP-in-WARP endpoint (ip:port), the one your network sees. Leave empty to auto-scan.');
+					'Outer classic WARP-in-WARP endpoint (ip:port), the one your network sees. Leave empty to auto-scan. On core v2.3+ naming an endpoint selects the classic gool carrier.');
 				o.datatype = 'ipaddrport(1)';
 				o.rmempty = true;
 				o.depends('protocol', 'gool');
 
 				o = s.option(form.Value, 'wiw_inner', 'gool Inner Hop',
-					'Inner WARP-in-WARP endpoint (ip:port). Leave empty to auto-scan.');
+					'Inner classic WARP-in-WARP endpoint (ip:port). Leave empty to auto-scan. On core v2.3+ naming an endpoint selects the classic gool carrier.');
 				o.datatype = 'ipaddrport(1)';
 				o.rmempty = true;
 				o.depends('protocol', 'gool');
+			}
+
+			if (supportsV23) {
+				o = s.option(form.ListValue, 'gool_carrier', 'gool Carrier',
+					'Core v2.3+ carries gool over MASQUE by default; classic restores the older WireGuard-in-WireGuard tunnel.');
+				o.value('masque', 'MASQUE-carried (default)');
+				o.value('classic', 'Classic WARP-in-WARP');
+				o.default = 'masque';
+				o.depends('protocol', 'gool');
+
+				o = s.option(form.Value, 'gool_peer', 'gool Inner Peer',
+					'WireGuard endpoint the MASQUE-carried gool dials inside the tunnel (ip:port). Leave empty for the endpoint its registration names.');
+				o.datatype = 'ipaddrport(1)';
+				o.rmempty = true;
+				o.depends('gool_carrier', 'masque');
 			}
 
 			if (supportsV20) {
@@ -1133,6 +1283,56 @@ return view.extend({
 				o.value('off', 'Never use bridges');
 				o.default = 'auto';
 				o.depends('tor_mode', /^(tunnel|reverse|only)$/);
+
+				if (supportsV21) {
+					o = s.option(form.Value, 'tor_http', 'Tor HTTP Listener',
+						'Also serve Tor as an HTTP/CONNECT proxy on this address for clients that cannot speak SOCKS5. Leave empty to disable.');
+					o.datatype = 'or(ipaddrport,string)';
+					o.rmempty = true;
+					o.depends('tor_mode', /^(tunnel|reverse|only)$/);
+
+					o = s.option(form.Value, 'tor_relays', 'Tor Relay Sources',
+						'auto (default) uses onionoo relays alongside bridgedb; only uses relays alone; off disables them; a number (e.g. 80) sets how many relays to measure.');
+					o.rmempty = true;
+					o.depends('tor_mode', /^(tunnel|reverse|only)$/);
+				}
+			}
+
+			if (supportsV21) {
+				s = m.section(form.NamedSection, 'main', 'aether', 'Psiphon (Core v2.1+)',
+					'Embedded Psiphon transport. Tunnel carries Psiphon inside WARP, reverse dials WARP through Psiphon (MASQUE only), and only runs plain Psiphon without a WARP tunnel.');
+
+				o = s.option(form.ListValue, 'psiphon_mode', 'Psiphon Mode');
+				o.value('off', 'Off');
+				o.value('tunnel', 'Psiphon through WARP');
+				o.value('reverse', 'WARP through Psiphon (MASQUE only)');
+				o.value('only', 'Psiphon only (no WARP tunnel)');
+				o.default = 'off';
+
+				o = s.option(form.Value, 'psiphon_bind', 'Psiphon SOCKS5 Listen Address');
+				o.default = '127.0.0.1:1821';
+				o.datatype = 'ipaddrport';
+				o.depends('psiphon_mode', 'tunnel');
+				o.depends('psiphon_mode', 'reverse');
+
+				o = s.option(form.ListValue, 'psiphon_shape', 'Psiphon Fronting',
+					'auto lets Psiphon pick, cdn limits it to fronted meek through a CDN, direct turns fronting off.');
+				o.value('auto', 'Auto (default)');
+				o.value('cdn', 'CDN meek only');
+				o.value('direct', 'No fronting');
+				o.default = 'auto';
+				o.depends('psiphon_mode', /^(tunnel|reverse|only)$/);
+
+				o = s.option(form.Value, 'psiphon_region', 'Psiphon Exit Region',
+					'Two-letter country code for the Psiphon exit, e.g. DE. Leave empty for automatic selection.');
+				o.rmempty = true;
+				o.depends('psiphon_mode', /^(tunnel|reverse|only)$/);
+
+				o = s.option(form.Value, 'psiphon_http', 'Psiphon HTTP Listener',
+					'Also serve Psiphon as an HTTP/CONNECT proxy on this address for clients that cannot speak SOCKS5. Leave empty to disable.');
+				o.datatype = 'or(ipaddrport,string)';
+				o.rmempty = true;
+				o.depends('psiphon_mode', /^(tunnel|reverse|only)$/);
 			}
 			s = m.section(form.NamedSection, 'main', 'aether', 'Custom Command',
 				'Take full control of the core command line. Generated mode shows the running command read-only; switch to Manual to type your own arguments (space-separated, no quotes). Manual commands still launch through aether-run, so Zero Trust secrets stay out of process listings. Applies on restart.');

@@ -43,9 +43,14 @@ Aether یک پراکسی محلی SOCKS5 ایجاد می‌کند و ترافی�
   استفاده از دکمه‌های Start و Stop یا دستورات CLI در زمان فعلی نمی‌شود.
 - **Scan Mode**: حالت `turbo` سریع‌تر است؛ `balanced` انتخاب معمول است؛
   حالت‌های `thorough`، `stealth` و `ironclad` زمان بیشتری برای کشف یا اعتبارسنجی
-  صرف می‌کنند.
+  صرف می‌کنند. حالت `verified` (هسته v2.1+) فقط به لبه‌های سنجیده‌شده‌ای وصل
+  می‌شود که connect-ip را جواب داده باشند.
 - **IP Version**: اگر IPv6 روی روتر فعال و سالم نیست، IPv4 را انتخاب کنید.
 - **Force Peer**: با وارد کردن `ip:port` اسکن را رد می‌کند.
+- **Exit Location Policy** (هسته v2.1+): تونلی که کشور خروجش مطلوب نباشد را رد
+  می‌کند (مثلاً `!IR,AZ,RU`)؛ هر دقیقه از داخل تونل دوباره بررسی می‌شود.
+- **Traffic Stats Logging** (هسته v2.1+): ثبت حجم آپلود/دانلود و مدت بالابودن
+  تونل هر ۶۰ ثانیه.
 - **HTTP/2 Mode** و **H2 Peer** برای MASQUE و MIM هستند. وقتی UDP/QUIC مسدود است
   از HTTP/2 استفاده کنید.
 - **TLS Fragmentation** برای MASQUE/MIM روی HTTP/2 و در صورت مسدود بودن handshake است.
@@ -220,6 +225,76 @@ aether-ctl check-tor        # IP خروجی و وضعیت IsTor (نام مستع
 state را وقتی والدهای آن root-owned نباشند یا برای گروه/دیگران قابل نوشتن باشند
 رد می‌کند. سرویس هنگام هر شروع Tor، مالکیت و modeهای `/` و `/etc` را ترمیم می‌کند.
 
+### موارد افزوده Tor در هسته v2.1+
+
+با هسته v2.1.0 و جدیدتر، دو کنترل اضافی کنار تنظیمات Tor ظاهر می‌شود:
+
+- `tor_http` علاوه بر SOCKS5، Tor را به شکل پروکسی HTTP/CONNECT روی آدرس
+  داده‌شده هم سرو می‌کند؛ برای کلاینت‌هایی که SOCKS5 ندارند.
+- `tor_relays` منبع پل‌ها را انتخاب می‌کند: `auto` (پیش‌فرض) پل‌های bridgedb و
+  رله‌های onionoo را با هم می‌گیرد، `only` فقط رله‌ها، `off` رله‌ها را غیرفعال
+  می‌کند و یک عدد (مثلاً `80`) تعداد رله‌های سنجیده‌شده را تعیین می‌کند. در
+  شبکه‌هایی که Tor را مسدود می‌کنند، هسته v2.1+ پل‌ها را از داخل خود تونل
+  می‌گیرد و همین است که Tor را در چون شبکه‌ای ممکن می‌کند.
+
+## Psiphon (هسته v2.1+)
+
+هسته v2.1 کتابخانه Psiphon را همان‌طور که Tor را دارد، داخلی دارد و با
+`psiphon_mode` سه حالت دارد:
+
+- `tunnel` وزش Psiphon را داخل WARP حمل می‌کند: شنونده SOCKS5 معمول خروجی WARP
+  را نگه می‌دارد و شنونده دومی روی `psiphon_bind` (پیش‌فرض `127.0.0.1:1821`)
+  از Psiphon خارج می‌شود.
+- `reverse` تونل را از مسیر Psiphon شماره‌گیری می‌کند تا WARP از خروجی Psiphon
+  دیده شود؛ به پروتکل MASQUE نیاز دارد (Psiphon فقط TCP حمل می‌کند، پس هسته
+  MASQUE را روی HTTP/2 اجرا می‌کند) و مانند Tor reverse، روی بقیه پروتکل‌ها در
+  هر دو جهت در زمان `set` رد می‌شود.
+- `only` Psiphon ساده را روی شنونده SOCKS5 اصلی سرو می‌کند و تونل WARP برقرار
+  نمی‌کند.
+
+چیز دیگری لازم نیست: اعتبارنامه‌ها و فهرست سرورها داخل هسته ساخته شده‌اند و
+آرشیوهای رسمی ریلیز، برنامه کمکی `psiphon-tunnel-core` را در پوشه `pt/` کنار
+باینری می‌گذارند (نصب‌کننده آن را در `/usr/bin/pt` نگه می‌دارد). تنظیم اختیاری:
+`psiphon_region` خروجی در یک کشور دوحرفی می‌خواهد (مثلاً `DE`)، `psiphon_shape`
+به `--psiphon-mode` نگاشت می‌شود (`auto` پیش‌فرض، `cdn` فقط meek از CDN،
+`direct` بدون fronting) و `psiphon_http` Psiphon را به شکل پروکسی
+HTTP/CONNECT هم سرو می‌کند. خروجی را با دکمه **Check Psiphon IP** در LuCI یا
+با این دستور بررسی کنید:
+
+```sh
+aether-ctl set psiphon_mode tunnel
+aether-ctl restart
+aether-ctl check-psiphon   # IP خروجی Psiphon (نام مستعار: psiphon-ip)
+```
+
+## محدودسازی کشور خروج و آمار ترافیک (هسته v2.1+)
+
+`exit_loc` تونلی که کشور خروجش مطلوب نباشد را رد می‌کند: `!IR,AZ,RU` آن کشورها
+را مسدود می‌کند و `DE,SE` فقط همان‌ها را می‌پذیرد. این بررسی از داخل تونلِ
+تکمیل‌شده، پیش از باز شدن SOCKS5 و سپس هر دقیقه یک‌بار انجام می‌شود؛ پس تونلی
+که جابه‌جا شود کنار گذاشته و جایگزین می‌شود. خالی بگذارید (پیش‌فرض) تا هیچ
+جست‌وجویی انجام نشود.
+
+`stats` (پیش‌فرض خاموش) هر ۶۰ ثانیه حجم آپلود/دانلود و مدت بالابودن تونل را در
+لاگ سرویس می‌نویسد؛ با `logread -f -e aether` ببینید.
+
+## انتخاب حامل gool (هسته v2.3+)
+
+هسته v2.3 معنای `--gool` را عوض کرد: اکنون تونل WARP از نوع WireGuard را داخل
+MASQUE حمل می‌کند و هویتش را از داخل تونل ثبت می‌کند تا آدرس خروج خارجی باشد.
+حمل‌ونقل قدیمی WireGuard-in-WireGuard با حامل کلاسیک در دسترس می‌ماند:
+
+- `gool_carrier=masque` (پیش‌فرض) از `--gool` جدید استفاده می‌کند؛ `gool_peer`
+  می‌تواند endpoint داخلی WireGuard را ثابت کند.
+- `gool_carrier=classic` با `--gool-classic` از endpointهای کلاسیک
+  WARP-in-WARP با `wiw_outer`/`wiw_inner` استفاده می‌کند.
+
+روی هسته‌های قدیمی‌تر از v2.3 این انتخاب نادیده گرفته می‌شود و gool کلاسیک
+می‌ماند. چون نام‌بردن از هر endpoint `wiw_*` باعث می‌شود هسته v2.3+ خودش حامل
+کلاسیک را انتخاب کند، کلاینت مقادیر ذخیره‌شده `wiw_*` را فقط وقتی حامل کلاسیک
+انتخاب شده به هسته می‌فرستد و با حامل MASQUE در لاگ سرویس به‌عنوان نادیده‌گرفته‌شده
+گزارش می‌شود.
+
 ## خط فرمان سفارشی
 
 بخش **Custom Command** (آخرین بخش صفحه LuCI) خط فرمان هسته را در اختیار شما
@@ -255,18 +330,26 @@ aether-ctl log 100
 aether-ctl test google.com
 aether-ctl check-ip                     # IP عمومی، کشور و تأخیر
 aether-ctl check-tor                    # IP خروجی Tor و IsTor (حالت‌های Tor در v2+)
+aether-ctl check-psiphon                # IP خروجی Psiphon (حالت‌های Psiphon در v2.1+)
 aether-ctl passwall status            # وضعیت پل Passwall2
 aether-ctl passwall localhost off     # غیرفعال کردن پروکسی لوکال‌هاست Passwall2
 aether-ctl passwall add-node          # ساخت نود socks اشاره‌کننده به Aether
 aether-ctl set protocol wg
 aether-ctl auto-perf                      # تشخیص خودکار رم و تنظیم پروفایل بهینه (هسته v1.8+)
 aether-ctl set perf_profile medium       # یا تنظیم دستی: low / medium / high (هسته v1.8+)
-aether-ctl set wiw_outer 162.159.192.1:2408   # مرحله بیرونی gool (هسته v1.9+)
-aether-ctl set wiw_inner 188.114.96.1:2408    # مرحله درونی gool (هسته v1.9+)
+aether-ctl set wiw_outer 162.159.192.1:2408   # مرحله بیرونی gool (v1.9+؛ حامل کلاسیک در v2.3+)
+aether-ctl set wiw_inner 188.114.96.1:2408    # مرحله درونی gool (v1.9+؛ حامل کلاسیک در v2.3+)
 aether-ctl set protocol mim                     # MASQUE-in-MASQUE (هسته v2+)
 aether-ctl set quic_v2 off                      # غیرفعال‌سازی opener QUIC v2 (هسته v2+)
 aether-ctl set ech auto                         # فعال‌سازی کشف ECH (هسته v1.9+)
 aether-ctl set tor_mode tunnel                  # Tor از طریق WARP (هسته v2+)
+aether-ctl set tor_relays only                  # رله‌های onionoo به‌عنوان پل (v2.1+)
+aether-ctl set psiphon_mode tunnel              # Psiphon از طریق WARP (v2.1+)
+aether-ctl set psiphon_region DE                # درخواست خروجی Psiphon در آلمان (v2.1+)
+aether-ctl set exit_loc '!IR,AZ,RU'             # رد کردن خروجی در آن کشورها (v2.1+)
+aether-ctl set stats 1                          # ثبت آمار ترافیک (v2.1+)
+aether-ctl set gool_carrier classic             # gool کلاسیک WARP-in-WARP (v2.3+)
+aether-ctl set gool_peer 188.114.97.1:2408      # endpoint داخلی gool روی MASQUE (v2.3+)
 aether-ctl set command_mode manual               # آرگومان‌های سفارشی هسته
 aether-ctl set custom_command '--bind 0.0.0.0:1819 --wg'  # آرگومان‌های جداشده با فاصله
 aether-ctl set upstream_proxy socks5://192.168.1.9:1082
@@ -298,7 +381,7 @@ chmod +x /tmp/aether-install.sh
 ```
 
 نصب‌کننده حداکثر پنج نسخه پایدار هسته از v1.5.0 به بعد را نمایش می‌دهد و
-پیش‌فرض آن v2.0.0 است. برای automation از `--non-interactive` استفاده کنید و
+پیش‌فرض آن v2.3.0 است. برای automation از `--non-interactive` استفاده کنید و
 برای نسخه مشخص v1.5.0 به بعد `--version vX.Y.Z` را بدهید. دستور
 `aether-ctl update` آخرین updater ریپو را دریافت کرده و همین فرآیند نصب را
 اجرا می‌کند؛ `aether-ctl change-version vX.Y.Z` میانبر مشخص برای تغییر نسخه

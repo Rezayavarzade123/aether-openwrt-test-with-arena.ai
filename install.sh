@@ -14,11 +14,11 @@
 #   --force-config   Overwrite existing /etc/config/aether
 #   --no-curl        Skip curl installation
 #   --version <tag>  Install a specific Aether core release (v1.5.0 or newer)
-#   --non-interactive  Do not prompt; defaults to v2.0.0
+#   --non-interactive  Do not prompt; defaults to v2.3.0
 
 # No set -e — we handle errors explicitly with || blocks and error() calls.
 umask 077
-CLIENT_VERSION="v0.8.0"
+CLIENT_VERSION="v0.9.0"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -112,7 +112,7 @@ esac
 
 REPO="CluvexStudio/Aether"
 API_URL="https://api.github.com/repos/${REPO}/releases?per_page=30"
-DEFAULT_VERSION="v2.0.0"
+DEFAULT_VERSION="v2.3.0"
 
 echo ""
 echo "========================================="
