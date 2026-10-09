@@ -375,7 +375,7 @@ aether-ctl stop              # توقف همین حالا، مستقل از تن
 را restart می‌کند.
 
 ```sh
-wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/install.sh
+wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/install.sh
 chmod +x /tmp/aether-install.sh
 /tmp/aether-install.sh --start
 ```
@@ -405,7 +405,7 @@ chmod +x /tmp/aether-install.sh
 در حذف معمولی، کانفیگ و هویت‌ها باقی می‌مانند:
 
 ```sh
-wget -qO /tmp/aether-uninstall.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/uninstall.sh
+wget -qO /tmp/aether-uninstall.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/uninstall.sh
 chmod +x /tmp/aether-uninstall.sh
 /tmp/aether-uninstall.sh
 ```

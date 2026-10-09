@@ -20,7 +20,7 @@
 ## نصب (یک خط)
 
 ```sh
-wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
+wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
 ```
 
 در حین نصب از شما پرسیده می‌شود:
@@ -77,7 +77,7 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/
 ## حذف نصب
 
 ```sh
-wget -qO /tmp/aether-uninstall.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/uninstall.sh
+wget -qO /tmp/aether-uninstall.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/uninstall.sh
 chmod +x /tmp/aether-uninstall.sh
 /tmp/aether-uninstall.sh           # حذف فایل‌های برنامه؛ حفظ کانفیگ و هویت‌ها
 /tmp/aether-uninstall.sh --purge   # حذف کانفیگ و داده‌های هویت نیز
@@ -178,7 +178,7 @@ UCI `wiw_outer` و `wiw_inner`؛ خالی = اسکن هر دو مرحله توس
 
 ```sh
 # ایجاد آرشیو از دایرکتوری files
-cd aether-openwrt-client
+cd aether-openwrt-test-with-arena.ai
 tar czf /tmp/aether-files.tar.gz files/
 
 # انتقال به روتر (OpenWrt سرور scp ندارد، از wget در روتر استفاده کنید)
@@ -195,7 +195,7 @@ tar xzf /tmp/aether-files.tar.gz -C /
 یا فقط اسکریپت نصب را دوباره اجرا کنید (همیشه آخرین فایل‌ها را از GitHub دانلود می‌کند):
 
 ```sh
-wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
+wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
 ```
 
 ## استفاده همزمان با Passwall 2 (پروکسی کل شبکه)

@@ -385,7 +385,7 @@ existing configuration by default, refreshes LuCI caches, and restarts the
 required web services.
 
 ```sh
-wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/install.sh
+wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/install.sh
 chmod +x /tmp/aether-install.sh
 /tmp/aether-install.sh --start
 ```
@@ -415,7 +415,7 @@ browser. Browser JavaScript caches can keep the previous page.
 Normal removal keeps configuration and identities:
 
 ```sh
-wget -qO /tmp/aether-uninstall.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/uninstall.sh
+wget -qO /tmp/aether-uninstall.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/uninstall.sh
 chmod +x /tmp/aether-uninstall.sh
 /tmp/aether-uninstall.sh
 ```

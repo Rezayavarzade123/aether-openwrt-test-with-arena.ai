@@ -1214,7 +1214,7 @@ do_change_version() {
 }
 
 do_update() {
-	local raw_base="https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main"
+	local raw_base="https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main"
 	local tmpdir updater arg update_args
 
 	if [ "$(id -u)" -ne 0 ]; then

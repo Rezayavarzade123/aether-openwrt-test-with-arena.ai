@@ -5,7 +5,7 @@
 # from CluvexStudio/Aether releases, and installs the LuCI web interface.
 #
 # Usage (on the router):
-#   wget -O /tmp/install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/install.sh
+#   wget -O /tmp/install.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/install.sh
 #   chmod +x /tmp/install.sh
 #   /tmp/install.sh
 #
@@ -315,7 +315,7 @@ SCRIPT_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")
 # When install.sh is run standalone (downloaded to /tmp), the files/ directory
 # isn't available locally.  Fall back to fetching each file from GitHub Raw.
 CLIENT_BRANCH="main"
-RAW_BASE="https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/${CLIENT_BRANCH}/files"
+RAW_BASE="https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/${CLIENT_BRANCH}/files"
 STAGE_ROOT="$TMP_DIR/root"
 
 stage_file() {

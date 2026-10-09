@@ -20,7 +20,7 @@ OpenWrt integration for [Aether](https://github.com/CluvexStudio/Aether) — a c
 ## Install (one line)
 
 ```sh
-wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
+wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
 ```
 
 During install you will be asked:
@@ -73,7 +73,7 @@ During install you will be asked:
 ## Uninstall
 
 ```sh
-wget -qO /tmp/aether-uninstall.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/uninstall.sh
+wget -qO /tmp/aether-uninstall.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/uninstall.sh
 chmod +x /tmp/aether-uninstall.sh
 /tmp/aether-uninstall.sh           # remove application files; keep config and identities
 /tmp/aether-uninstall.sh --purge   # also permanently remove config and identity data
@@ -199,7 +199,7 @@ If you have the repo cloned locally and want to push updated files to your route
 
 ```sh
 # Create a tarball of the files directory
-cd aether-openwrt-client
+cd aether-openwrt-test-with-arena.ai
 tar czf /tmp/aether-files.tar.gz files/
 
 # Transfer to router (OpenWrt doesn't have scp server, use wget from router)
@@ -216,7 +216,7 @@ tar xzf /tmp/aether-files.tar.gz -C /
 Or just re-run the install script (it always fetches the latest files from GitHub):
 
 ```sh
-wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
+wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/install.sh && chmod +x /tmp/aether-install.sh && /tmp/aether-install.sh --start
 ```
 
 ## Using with Passwall 2 (Transparent Proxy)
