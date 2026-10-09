@@ -4,7 +4,7 @@
 
 # Aether OpenWrt Client
 
-**نسخه کلاینت: v0.9.0**
+**نسخه کلاینت: v0.9.1**
 
 اینتگریشن OpenWrt برای [Aether](https://github.com/CluvexStudio/Aether) — یک کلاینت دور زدن سانسور.
 
@@ -72,6 +72,8 @@ wget -qO /tmp/aether-install.sh https://raw.githubusercontent.com/Rezayavarzade1
 /tmp/aether-install.sh --no-curl       # رد شدن از پرامپت نصب curl
 /tmp/aether-install.sh --version v1.5.0 --start
 /tmp/aether-install.sh --non-interactive --start  # نسخه v2.3.0 بدون پرامپت
+اگر دانلود از GitHub روی شبکه شما timeout می‌خورد، گزینه --mirror <prefix> را اضافه کنید — یک پیشوند ghproxy که به دانلود ریلیز و فایل‌های پشتیبان اعمال می‌شود — یا قبل از اجرای نصب‌کننده export AETHER_GH_MIRROR=<prefix> را بزنید. همین گزینه برای aether-ctl update نیز کار می‌کند. دانلود checksum علاوه بر سه بار تلاش دوباره، به SHA256SUMS.txt ریلیز هم fallback می‌کند.
+
 ```
 
 ## حذف نصب

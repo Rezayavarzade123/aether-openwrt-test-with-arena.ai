@@ -1214,7 +1214,6 @@ do_change_version() {
 }
 
 do_update() {
-	local raw_base="https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main"
 	local tmpdir updater arg update_args
 
 	if [ "$(id -u)" -ne 0 ]; then
@@ -1222,11 +1221,25 @@ do_update() {
 		return 1
 	fi
 
+	# Optional ghproxy-style mirror prefix for this updater fetch, from
+	# AETHER_GH_MIRROR or --mirror. The environment is inherited by
+	# update.sh, which applies it to the installer download as well.
+	local mirror="${AETHER_GH_MIRROR:-}"
+
 	update_args="$*"
 	while [ "$#" -gt 0 ]; do
 		arg="$1"
 		case "$arg" in
 			--start|--force-config|--no-curl|--non-interactive|--version=*) ;;
+			--mirror=*) mirror="${arg#--mirror=}" ;;
+			--mirror)
+				shift
+				[ -n "${1:-}" ] || {
+					log_err "--mirror requires a URL prefix"
+					return 1
+				}
+				mirror="$1"
+				;;
 			--version)
 				shift
 				[ -n "${1:-}" ] || {
@@ -1241,6 +1254,12 @@ do_update() {
 		esac
 		shift
 	done
+
+	case "$mirror" in
+		""|*/) ;;
+		*) mirror="$mirror/" ;;
+	esac
+	local raw_base="${mirror}https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main"
 
 	command -v wget >/dev/null 2>&1 || {
 		log_err "wget is required to update"

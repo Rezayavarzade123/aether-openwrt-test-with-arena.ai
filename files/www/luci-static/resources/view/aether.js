@@ -12,7 +12,7 @@
 'require ui';
 'require view';
 
-var AETHER_CLIENT_VERSION = 'v0.9.0';
+var AETHER_CLIENT_VERSION = 'v0.9.1';
 
 /* Obfuscation profiles from Aether core guide — depend on protocol. */
 var AETHER_PROFILES = {
