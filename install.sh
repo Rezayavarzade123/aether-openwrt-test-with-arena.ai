@@ -14,11 +14,13 @@
 #   --force-config   Overwrite existing /etc/config/aether
 #   --no-curl        Skip curl installation
 #   --version <tag>  Install a specific Aether core release (v1.5.0 or newer)
+#   --mirror <url>   Prefix for GitHub downloads (ghproxy-style), e.g.
+#                    https://ghproxy.net/ — or set AETHER_GH_MIRROR
 #   --non-interactive  Do not prompt; defaults to v2.3.0
 
 # No set -e — we handle errors explicitly with || blocks and error() calls.
 umask 077
-CLIENT_VERSION="v0.9.0"
+CLIENT_VERSION="v0.9.1"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -31,6 +33,48 @@ info()    { printf "${BLUE}[*]${RESET} %s\n" "$*"; }
 success() { printf "${GREEN}[+]${RESET} %s\n" "$*"; }
 warn()    { printf "${YELLOW}[!]${RESET} %s\n" "$*"; }
 error()   { printf "${RED}[-]${RESET} %s\n" "$*" >&2; }
+
+# Optional download mirror (ghproxy-style URL prefix) for networks where
+# github.com or raw.githubusercontent.com time out. Set with --mirror <url>
+# or the AETHER_GH_MIRROR environment variable.
+GH_MIRROR="${AETHER_GH_MIRROR:-}"
+
+# Prepend the configured mirror to a canonical GitHub URL.
+mirror_url() {
+    printf '%s%s' "$GH_MIRROR" "$1"
+}
+
+# fetch_retry <url> <outfile> <timeout-secs> [attempts]
+# Download with retries; a partial file from a failed attempt is removed.
+fetch_retry() {
+    local url="$1" out="$2" t="$3" tries="${4:-3}" n=0
+    while :; do
+        n=$((n + 1))
+        if wget -4 -T "$t" -O "$out" "$url" && [ -s "$out" ]; then
+            return 0
+        fi
+        rm -f "$out"
+        [ "$n" -ge "$tries" ] && return 1
+        warn "Download attempt $n failed; retrying..."
+        sleep 2
+    done
+}
+
+# True when the file's first line is "<64 hex chars> <name>" — a real
+# sha256sum file, not an HTML error page saved by a proxy or portal.
+valid_checksum_file() {
+    awk 'NR==1 { exit !(length($1) == 64 && $1 ~ /^[0-9a-fA-F]+$/ && $2 != "") }' "$1"
+}
+
+# Print "<digest>  <name>" for <name> from a SHA256SUMS.txt style file.
+sums_extract_line() {
+    awk -v f="$2" '
+        ($2 == f || $2 == "*" f) && length($1) == 64 && $1 ~ /^[0-9a-fA-F]+$/ {
+            print $1 "  " f; found = 1; exit
+        }
+        END { if (!found) exit 1 }
+    ' "$1"
+}
 
 
 # Automatic performance profile from total RAM:
@@ -62,6 +106,14 @@ while [ "$#" -gt 0 ]; do
         --force-config) FORCE_CONFIG=1 ;;
         --no-curl) SKIP_CURL=1 ;;
         --non-interactive) NON_INTERACTIVE=1 ;;
+        --mirror)
+            shift
+            [ -n "${1:-}" ] || { error "--mirror requires a URL prefix"; exit 1; }
+            GH_MIRROR="$1"
+            ;;
+        --mirror=*)
+            GH_MIRROR="${arg#--mirror=}"
+            ;;
         --version)
             shift
             [ -n "${1:-}" ] || { error "--version requires a release tag"; exit 1; }
@@ -71,7 +123,10 @@ while [ "$#" -gt 0 ]; do
             REQUESTED_VERSION="${arg#--version=}"
             ;;
         -h|--help)
-            echo "Usage: $0 [--start] [--force-config] [--no-curl] [--version <vX.Y.Z>] [--non-interactive]"
+            echo "Usage: $0 [--start] [--force-config] [--no-curl] [--version <vX.Y.Z>] [--non-interactive] [--mirror <url>]"
+            echo ""
+            echo "  --mirror <url>  Prefix for GitHub downloads (ghproxy-style), e.g."
+            echo "                  https://ghproxy.net/  — or set AETHER_GH_MIRROR"
             exit 0
             ;;
         *)
@@ -81,6 +136,12 @@ while [ "$#" -gt 0 ]; do
     esac
     shift
 done
+
+# Normalize the mirror prefix: allow it with or without a trailing slash.
+case "$GH_MIRROR" in
+    ""|*/) ;;
+    *) GH_MIRROR="$GH_MIRROR/" ;;
+esac
 
 # --- Preflight ---
 if [ "$(id -u)" -ne 0 ]; then
@@ -151,8 +212,18 @@ contains_tag() {
 }
 
 info "Fetching available releases from GitHub..."
-RELEASE_JSON=$(wget -4 -T 30 -qO- "$API_URL" 2>/dev/null) || {
+RELEASE_JSON=""
+api_n=0
+while [ "$api_n" -lt 3 ] && [ -z "$RELEASE_JSON" ]; do
+    RELEASE_JSON=$(wget -4 -T 30 -qO- "$(mirror_url "$API_URL")" 2>/dev/null) || RELEASE_JSON=""
+    [ -z "$RELEASE_JSON" ] && {
+        api_n=$((api_n + 1))
+        [ "$api_n" -lt 3 ] && { warn "GitHub API attempt $api_n failed; retrying..."; sleep 2; }
+    }
+done
+[ -n "$RELEASE_JSON" ] || {
     error "Failed to reach GitHub API. Check internet connection."
+    warn "If GitHub is blocked or flaky on your network, retry with a mirror: --mirror https://ghproxy.net/"
     exit 1
 }
 
@@ -216,7 +287,7 @@ valid_tag "$TAG_NAME" || {
 # release endpoint before using it in a download URL.
 if ! contains_tag "$TAG_NAME"; then
     info "Verifying requested release: $TAG_NAME"
-    wget -4 -T 30 -qO- "https://api.github.com/repos/${REPO}/releases/tags/${TAG_NAME}" |
+    wget -4 -T 30 -qO- "$(mirror_url "https://api.github.com/repos/${REPO}/releases/tags/${TAG_NAME}")" |
         grep -q '"tag_name"' || {
         error "Release $TAG_NAME was not found."
         exit 1
@@ -235,22 +306,37 @@ TMP_DIR=$(mktemp -d /tmp/aether-install.XXXXXX)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 info "Downloading $ARCHIVE..."
-wget -4 -T 120 -O "$TMP_DIR/$ARCHIVE" "$ASSET_URL" || {
+if ! fetch_retry "$(mirror_url "$ASSET_URL")" "$TMP_DIR/$ARCHIVE" 120 3; then
     error "Download failed."
+    warn "If github.com release downloads time out on your network, retry with a mirror: --mirror https://ghproxy.net/"
     exit 1
-}
+fi
 [ -s "$TMP_DIR/$ARCHIVE" ] || {
     error "Downloaded archive is empty."
     exit 1
 }
 
 # --- Verify release checksum ---
+# Primary: the per-file <archive>.sha256. Fallback: the release-wide
+# SHA256SUMS.txt, from which the matching line is extracted. Both sources
+# are retried, because flaky networks often drop one connection of a pair.
 CHECKSUM_URL="${ASSET_URL}.sha256"
+SUMS_URL="https://github.com/${REPO}/releases/download/${TAG_NAME}/SHA256SUMS.txt"
 info "Verifying checksum..."
-wget -4 -T 30 -O "$TMP_DIR/$ARCHIVE.sha256" "$CHECKSUM_URL" || {
+if ! fetch_retry "$(mirror_url "$CHECKSUM_URL")" "$TMP_DIR/$ARCHIVE.sha256" 30 3; then
+    warn "Could not download the per-file checksum; trying SHA256SUMS.txt..."
+    if fetch_retry "$(mirror_url "$SUMS_URL")" "$TMP_DIR/SHA256SUMS.txt" 30 3; then
+        sums_extract_line "$TMP_DIR/SHA256SUMS.txt" "$ARCHIVE" \
+            > "$TMP_DIR/$ARCHIVE.sha256" || :
+    fi
+fi
+if ! valid_checksum_file "$TMP_DIR/$ARCHIVE.sha256"; then
     error "Could not download the release checksum."
+    error "Expected file: $TMP_DIR/$ARCHIVE"
+    error "Checksum URL: $(mirror_url "$CHECKSUM_URL")"
+    warn "If github.com release downloads time out on your network, retry with a mirror: --mirror https://ghproxy.net/"
     exit 1
-}
+fi
 if ! (cd "$TMP_DIR" && sha256sum -c "$ARCHIVE.sha256" >/dev/null 2>&1); then
     error "Checksum verification failed. Aborting."
     error "Expected file: $TMP_DIR/$ARCHIVE"
@@ -327,7 +413,7 @@ stage_file() {
     if [ -f "$src_local" ]; then
         cp -f "$src_local" "$staged" || return 1
     else
-        wget -q -O "$staged" "$RAW_BASE/$rel" || {
+        fetch_retry "$(mirror_url "$RAW_BASE/$rel")" "$staged" 30 3 || {
             error "Failed to download $rel"
             rm -f "$staged"
             return 1

@@ -395,7 +395,11 @@ and defaults to v2.3.0. For automation use `--non-interactive`; add
 `--version vX.Y.Z` to choose a valid published release from v1.5.0 onward.
 `aether-ctl update` fetches the latest repository updater and runs the same
 installer flow; `aether-ctl change-version vX.Y.Z` is the explicit shortcut for
-switching core versions. Before starting and before LuCI renders its form, the
+switching core versions. On networks where GitHub times out, add `--mirror <prefix>`
+(e.g. `--mirror https://ghproxy.net/`) or export `AETHER_GH_MIRROR` so the
+core archive, its checksum, and the support files are fetched through a
+ghproxy-style mirror; checksum fetches retry three times and fall back to
+the release `SHA256SUMS.txt`. Before starting and before LuCI renders its form, the
 client detects the installed core. v1.5 hides and does not pass the v1.6-only
 HTTP CONNECT proxy, MASQUE startup deadline, and core log-level options. v1.6
 uses the v1.6 capability set, and v1.7 or newer adds upstream proxy chaining

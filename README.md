@@ -4,7 +4,7 @@ Quick guide: [English client guide](CLIENT-GUIDE.en.md) | [راهنمای فار
 
 # Aether OpenWrt Client
 
-**Client release: v0.9.0**
+**Client release: v0.9.1**
 
 OpenWrt integration for [Aether](https://github.com/CluvexStudio/Aether) — a censorship circumvention client.
 
@@ -68,6 +68,12 @@ During install you will be asked:
 /tmp/aether-install.sh --no-curl       # skip curl installation prompt
 /tmp/aether-install.sh --version v1.5.0 --start
 /tmp/aether-install.sh --non-interactive --start  # use v2.3.0, no prompts
+If GitHub downloads time out on your network, add --mirror <prefix> — a
+ghproxy-style URL prefix applied to release and support-file downloads — or
+export AETHER_GH_MIRROR=<prefix> before running the installer. The same
+flag works for aether-ctl update. Checksum downloads additionally retry
+three times and fall back to the release's SHA256SUMS.txt before giving up.
+
 ```
 
 ## Uninstall
@@ -119,7 +125,7 @@ archive is always verified against the matching upstream SHA-256 file.
 
 ## Core compatibility
 
-Client release **v0.9.0** supports Aether core **v1.5.0 and newer** and defaults
+Client release **v0.9.1** supports Aether core **v1.5.0 and newer** and defaults
 to **v2.3.0**. The client detects the installed core before starting the
 service and before rendering the LuCI form, then applies the matching
 capability profile:

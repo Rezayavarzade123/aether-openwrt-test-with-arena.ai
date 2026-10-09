@@ -11,12 +11,21 @@ assert_contains() {
 		{ echo "missing '$text' in $file" >&2; exit 1; }
 }
 
-assert_contains install.sh 'CLIENT_VERSION="v0.9.0"'
+assert_contains install.sh 'CLIENT_VERSION="v0.9.1"'
 assert_contains install.sh 'DEFAULT_VERSION="v2.3.0"'
 assert_contains install.sh '--version'
 assert_contains install.sh '--non-interactive'
 assert_contains install.sh 'v1.5.0 or newer is required'
 assert_contains update.sh 'Aether OpenWrt Client updater'
+assert_contains install.sh 'fetch_retry()'
+assert_contains install.sh 'mirror_url()'
+assert_contains install.sh 'valid_checksum_file()'
+assert_contains install.sh 'sums_extract_line()'
+assert_contains install.sh 'SHA256SUMS.txt'
+assert_contains install.sh '--mirror'
+assert_contains install.sh 'AETHER_GH_MIRROR'
+assert_contains update.sh '--mirror'
+assert_contains update.sh 'AETHER_GH_MIRROR'
 assert_contains files/usr/bin/aether-ctl 'do_update()'
 assert_contains files/usr/bin/aether-run 'umask 077'
 assert_contains files/usr/bin/aether-ctl 'do_change_version()'
@@ -91,7 +100,7 @@ assert_contains files/etc/init.d/aether '--http-proxy'
 assert_contains files/etc/init.d/aether '--startup-secs'
 assert_contains files/etc/init.d/aether '--no-profile-retry'
 assert_contains files/etc/init.d/aether '--upstream'
-assert_contains files/www/luci-static/resources/view/aether.js "AETHER_CLIENT_VERSION = 'v0.9.0'"
+assert_contains files/www/luci-static/resources/view/aether.js "AETHER_CLIENT_VERSION = 'v0.9.1'"
 assert_contains files/www/luci-static/resources/view/aether.js 'aetherCoreSupportsV16'
 assert_contains files/www/luci-static/resources/view/aether.js 'aetherCoreSupportsV17'
 assert_contains files/www/luci-static/resources/view/aether.js 'aetherCoreSupportsV21'
