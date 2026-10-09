@@ -5,7 +5,7 @@
 # from CluvexStudio/Aether releases, and installs the LuCI web interface.
 #
 # Usage (on the router):
-#   wget -O /tmp/install.sh https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/main/install.sh
+#   wget -O /tmp/install.sh https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/main/install.sh
 #   chmod +x /tmp/install.sh
 #   /tmp/install.sh
 #
@@ -14,11 +14,11 @@
 #   --force-config   Overwrite existing /etc/config/aether
 #   --no-curl        Skip curl installation
 #   --version <tag>  Install a specific Aether core release (v1.5.0 or newer)
-#   --non-interactive  Do not prompt; defaults to v2.0.0
+#   --non-interactive  Do not prompt; defaults to v2.3.0
 
 # No set -e — we handle errors explicitly with || blocks and error() calls.
 umask 077
-CLIENT_VERSION="v0.8.0"
+CLIENT_VERSION="v0.9.0"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -112,7 +112,7 @@ esac
 
 REPO="CluvexStudio/Aether"
 API_URL="https://api.github.com/repos/${REPO}/releases?per_page=30"
-DEFAULT_VERSION="v2.0.0"
+DEFAULT_VERSION="v2.3.0"
 
 echo ""
 echo "========================================="
@@ -315,7 +315,7 @@ SCRIPT_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")
 # When install.sh is run standalone (downloaded to /tmp), the files/ directory
 # isn't available locally.  Fall back to fetching each file from GitHub Raw.
 CLIENT_BRANCH="main"
-RAW_BASE="https://raw.githubusercontent.com/moein8668-git/aether-openwrt-client/${CLIENT_BRANCH}/files"
+RAW_BASE="https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-with-arena.ai/${CLIENT_BRANCH}/files"
 STAGE_ROOT="$TMP_DIR/root"
 
 stage_file() {
