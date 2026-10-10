@@ -70,6 +70,10 @@ EOS
 	chmod 755 "$stage/aether"
 	printf '#!/bin/sh\necho mock lyrebird\n' >"$stage/pt/lyrebird"
 	chmod 755 "$stage/pt/lyrebird"
+	if [ "${1:-}" != "without-psiphon" ]; then
+		printf '#!/bin/sh\necho mock psiphon-tunnel-core\n' >"$stage/pt/psiphon-tunnel-core"
+		chmod 755 "$stage/pt/psiphon-tunnel-core"
+	fi
 	tar czf "$BASE/tmp/fakerelease/$ARCHIVE" -C "$stage" aether pt
 	sum="$(sha256sum "$BASE/tmp/fakerelease/$ARCHIVE" | awk '{print $1}')"
 	printf '%s  %s\n' "$sum" "$ARCHIVE" >"$BASE/tmp/fakerelease/$ARCHIVE.sha256"
@@ -290,10 +294,12 @@ assert_all_mirrored() {
 	fi
 }
 
-# Asserts the nine support files landed with installer-correct permissions.
+# Asserts the support files and release-bundled helper binaries were installed.
 assert_full_install() {
 	assert_mode /usr/bin/aether 755
 	assert_mode /usr/bin/pt/lyrebird 755
+	assert_mode /usr/bin/pt/psiphon-tunnel-core 755
+	assert_file_contains /usr/bin/pt/psiphon-tunnel-core "mock psiphon-tunnel-core"
 	assert_mode /etc/config/aether 600
 	assert_mode /etc/init.d/aether 755
 	assert_mode /usr/bin/aether-ctl 755
@@ -330,6 +336,16 @@ assert_log_absent "v1.4.0"
 assert_full_install
 assert_uci main.perf_profile high
 assert_rcd "disable aether"
+
+# Psiphon-capable releases must contain the console helper before replacing
+# an existing core; fail safely rather than installing a guaranteed crash loop.
+make_release without-psiphon
+new_case psiphon-helper-required
+run_install - /pkg/install.sh --non-interactive --no-curl
+assert_rc_nonzero
+assert_log "Aether v2.3.0 archive is missing pt/psiphon-tunnel-core"
+assert_absent /usr/bin/aether
+make_release
 
 # --- performance profile from RAM ------------------------------------------
 new_case perf-medium

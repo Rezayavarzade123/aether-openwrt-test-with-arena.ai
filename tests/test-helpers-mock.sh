@@ -44,7 +44,7 @@ add_fns() {
 }
 
 add_fns install.sh mirror_url valid_checksum_file sums_extract_line \
-	valid_tag supported_core_version contains_tag
+	valid_tag supported_core_version supports_psiphon_core contains_tag
 add_fns files/usr/bin/aether-ctl redact_url core_version core_supports_v16 \
 	core_supports_v17 core_supports_v18 core_supports_v19 \
 	core_supports_v20 core_supports_v21 core_supports_v23
@@ -143,6 +143,15 @@ ok_false supported_core_version v1.0.0
 ok_false supported_core_version v0.9.1
 ok_false supported_core_version nightly
 ok_false supported_core_version ""
+
+# The release helper is mandatory for Psiphon-capable cores from v2.1 onward.
+ok_true supports_psiphon_core v2.1.0
+ok_true supports_psiphon_core v2.3.0
+ok_true supports_psiphon_core v3.0.0
+ok_false supports_psiphon_core v2.0.9
+ok_false supports_psiphon_core v1.9.0
+ok_false supports_psiphon_core garbage
+ok_false supports_psiphon_core ""
 
 # --- install.sh: contains_tag -----------------------------------------------
 AVAILABLE_TAGS="$(printf 'v2.3.0\nv2.1.0\nv1.5.0')"

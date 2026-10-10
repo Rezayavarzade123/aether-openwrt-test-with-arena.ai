@@ -149,7 +149,8 @@ capability profile:
   unexposed.
 - **Core v2.1.0 and newer:** adds the embedded Psiphon (`psiphon_mode` with
   `psiphon_bind`/`psiphon_http`/`psiphon_region`/`psiphon_shape`; the official
-  release archives ship the `psiphon-tunnel-core` helper in `pt/`), exit-country
+  release archives ship the `psiphon-tunnel-core` helper in `pt/`, which the
+  installer places at `/usr/bin/pt/psiphon-tunnel-core`), exit-country
   pinning (`exit_loc`), traffic stats logging (`stats`), Tor relay sources
   (`tor_relays`) and the Tor HTTP/CONNECT listener (`tor_http`), and the
   `verified` scan mode.
@@ -289,7 +290,7 @@ BusyBox or user namespaces are unavailable.
 - `curl` is optional (asked during install, defaults to Yes). It enables LuCI connection tests and the data-plane recovery watchdog.
 - Zero Trust service-token secrets are kept in the root-only UCI config and redacted from CLI and service command output.
 - Tor (core v2 Tor builds): controls are shown by Core version, but a Core package must also include Tor support. If `:1820` listens but Tor never connects, check `logread -e aether` for filesystem-permission errors — the service repairs `/` and `/etc` ownership/modes automatically on start. Verify with `aether-ctl check-tor` (expect `Tor: true IP: …`).
-- Psiphon (core v2.1+): the official release archives ship the `psiphon-tunnel-core` helper in the `pt/` folder next to the binary; the installer keeps that folder at `/usr/bin/pt`. `psiphon_mode=tunnel` serves a second SOCKS5 listener on `127.0.0.1:1821` (the main `:1819` keeps the WARP exit); verify with `aether-ctl check-psiphon`.
+- Psiphon (core v2.1+): the official release archives ship `pt/psiphon-tunnel-core`; the installer places it at `/usr/bin/pt/psiphon-tunnel-core`. `psiphon_mode=tunnel` serves a second SOCKS5 listener on `127.0.0.1:1821` (the main `:1819` keeps the WARP exit); verify with `aether-ctl check-psiphon`.
 - Manual command mode bypasses every UCI option (including Tor): paste full commands or bare arguments; a leading `/usr/bin/aether(-run)` is stripped automatically. Probes read the manual binds; `check-tor` refuses fast when `--tor` is absent.
 - See [CLIENT-GUIDE.en.md](CLIENT-GUIDE.en.md) for the settings, protocols,
   watchdog behavior, Zero Trust configuration, and troubleshooting.

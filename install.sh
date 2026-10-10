@@ -211,6 +211,15 @@ supported_core_version() {
         { [ "$major" -eq 1 ] 2>/dev/null && [ "$minor" -ge 5 ] 2>/dev/null; }
 }
 
+supports_psiphon_core() {
+    local version="${1#v}" major minor rest
+    major="${version%%.*}"
+    rest="${version#*.}"
+    minor="${rest%%.*}"
+    [ "$major" -gt 2 ] 2>/dev/null ||
+        { [ "$major" -eq 2 ] 2>/dev/null && [ "$minor" -ge 1 ] 2>/dev/null; }
+}
+
 contains_tag() {
     echo "$AVAILABLE_TAGS" | grep -Fx "$1" >/dev/null 2>&1
 }
@@ -363,9 +372,15 @@ if [ -z "$BINARY" ] || [ ! -f "$BINARY" ]; then
     exit 1
 fi
 
-# Core v2 Tor-enabled archives also carry the lyrebird pluggable transport.
-# Keep it beside the core binary: Arti discovers the helper under /usr/bin/pt.
-PT_BINARY=$(find "$TMP_DIR" -type f -path "*/pt/lyrebird" | head -n1)
+# Core release archives carry the pluggable transport helpers under pt/.
+# Arti uses lyrebird for Tor; Aether v2.1+ requires psiphon-tunnel-core for
+# Psiphon. Keep each helper at its expected path beside the installed binary.
+LYREBIRD_BINARY=$(find "$TMP_DIR" -type f -path "*/pt/lyrebird" | head -n1)
+PSIPHON_BINARY=$(find "$TMP_DIR" -type f -path "*/pt/psiphon-tunnel-core" | head -n1)
+if supports_psiphon_core "$TAG_NAME" && [ -z "$PSIPHON_BINARY" ]; then
+    error "Aether $TAG_NAME archive is missing pt/psiphon-tunnel-core. Refusing to install a Psiphon-capable core without its helper."
+    exit 1
+fi
 
 chmod +x "$BINARY"
 success "Binary: $($BINARY --version 2>&1)"
@@ -466,17 +481,30 @@ cp -f "$BINARY" /usr/bin/aether && chmod 755 /usr/bin/aether || {
 }
 success "Installed /usr/bin/aether"
 
-if [ -n "$PT_BINARY" ] && [ -f "$PT_BINARY" ]; then
+if [ -n "$LYREBIRD_BINARY" ] && [ -f "$LYREBIRD_BINARY" ]; then
     mkdir -p /usr/bin/pt || {
         error "Failed to create /usr/bin/pt for the Tor pluggable transport"
         exit 1
     }
-    cp -f "$PT_BINARY" /usr/bin/pt/lyrebird &&
+    cp -f "$LYREBIRD_BINARY" /usr/bin/pt/lyrebird &&
         chmod 755 /usr/bin/pt/lyrebird || {
         error "Failed to install /usr/bin/pt/lyrebird"
         exit 1
     }
     success "Installed /usr/bin/pt/lyrebird"
+fi
+
+if [ -n "$PSIPHON_BINARY" ] && [ -f "$PSIPHON_BINARY" ]; then
+    mkdir -p /usr/bin/pt || {
+        error "Failed to create /usr/bin/pt for the Psiphon helper"
+        exit 1
+    }
+    cp -f "$PSIPHON_BINARY" /usr/bin/pt/psiphon-tunnel-core &&
+        chmod 755 /usr/bin/pt/psiphon-tunnel-core || {
+        error "Failed to install /usr/bin/pt/psiphon-tunnel-core"
+        exit 1
+    }
+    success "Installed /usr/bin/pt/psiphon-tunnel-core"
 fi
 
 if [ -f /etc/config/aether ] && [ "$FORCE_CONFIG" -eq 0 ]; then
