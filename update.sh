@@ -10,6 +10,7 @@ REPO_RAW="https://raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test
 GH_MIRROR="${AETHER_GH_MIRROR:-}"
 
 error() { printf '%s\n' "aether update: $*" >&2; }
+warn() { printf '%s\n' "aether update: $*" >&2; }
 
 if [ "$(id -u)" -ne 0 ]; then
 	error "run as root on the OpenWrt device"

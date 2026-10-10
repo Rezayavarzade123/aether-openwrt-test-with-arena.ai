@@ -135,13 +135,47 @@ psiphon_mode=reverse
 EOF
 run_case "v2.3.0 psiphon reverse on masque" "--psiphon-reverse --psiphon-bind 127.0.0.1:1821"
 
-# ---- psiphon-only: no bind flag ----
+# ---- psiphon-only works regardless of the WARP protocol ----
 cat >"$MOCK_UCI_FILE" <<'EOF'
-protocol=masque
+protocol=wg
 psiphon_mode=only
 EOF
-run_case "v2.3.0 psiphon only" "--psiphon-only"
+run_case "v2.3.0 psiphon only on wg" "--psiphon-only"
 expect_absent "psiphon only omits --psiphon-bind" "--psiphon-bind"
+
+# ---- explicit disabled protocol runs Psiphon without any WARP transport ----
+cat >"$MOCK_UCI_FILE" <<'EOF'
+protocol=disabled
+psiphon_mode=only
+tor_mode=off
+EOF
+run_case "v2.3.0 disabled protocol runs Psiphon-only" "--psiphon-only"
+expect_absent "disabled protocol omits --masque" "--masque"
+expect_absent "disabled protocol omits --wg" "--wg"
+expect_absent "disabled protocol omits --gool" "--gool"
+expect_absent "disabled protocol omits --mim" "--mim"
+expect_absent "disabled protocol omits Aether obfuscation" "--noize"
+
+cat >"$MOCK_UCI_FILE" <<'EOF'
+protocol=disabled
+psiphon_mode=off
+EOF
+expect_rc_fail "disabled protocol requires Psiphon-only mode"
+
+cat >"$MOCK_UCI_FILE" <<'EOF'
+protocol=disabled
+psiphon_mode=only
+tor_mode=tunnel
+EOF
+expect_rc_fail "disabled protocol requires Tor off"
+
+MOCK_CORE_VERSION="2.0.0"
+cat >"$MOCK_UCI_FILE" <<'EOF'
+protocol=disabled
+psiphon_mode=only
+EOF
+expect_rc_fail "disabled protocol requires core v2.1+"
+MOCK_CORE_VERSION="2.3.0"
 
 # ---- exit_loc + stats ----
 cat >"$MOCK_UCI_FILE" <<'EOF'

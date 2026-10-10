@@ -256,13 +256,25 @@ Core v2.1 embeds Psiphon the same way it embeds Tor, with three modes in
   the core runs MASQUE over HTTP/2) and is rejected against other protocols
   in both directions at set time, like Tor reverse.
 - `only` serves plain Psiphon from the main SOCKS5 listener and does not
-  establish a WARP tunnel.
+  establish a WARP tunnel. In **Basic Settings → Protocol**, choose **Disabled**
+  to omit the MASQUE, WireGuard, gool, and MIM tunnel flags; keep **Psiphon
+  Mode → only** and **Tor Mode → Off**. The Aether core service must remain
+  running because it hosts embedded Psiphon.
+
+CLI equivalent (set Psiphon mode first):
+
+```sh
+aether-ctl set tor_mode off
+aether-ctl set psiphon_mode only
+aether-ctl set protocol disabled
+aether-ctl restart
+```
 
 Nothing else is required: credentials and the server list are built into the
 core, and the official release archives ship the `psiphon-tunnel-core` helper
-in the `pt/` folder next to the binary (the installer keeps it at
-`/usr/bin/pt`). Optional tuning: `psiphon_region` asks for an exit in a
-two-letter country (e.g. `DE`), `psiphon_shape` maps to `--psiphon-mode`
+in the `pt/` folder next to the binary; the installer places it at
+`/usr/bin/pt/psiphon-tunnel-core`. Optional tuning: `psiphon_region` asks for
+an exit in a two-letter country (e.g. `DE`), `psiphon_shape` maps to `--psiphon-mode`
 (`auto` default, `cdn` limits to fronted meek through a CDN, `direct` turns
 fronting off), and `psiphon_http` also serves Psiphon as an HTTP/CONNECT
 proxy. Verify the exit with the LuCI **Check Psiphon IP** button or:

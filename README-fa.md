@@ -107,6 +107,8 @@ aether-ctl change-version v1.5.0 --start
 aether-ctl update --version v1.5.0 --start
 aether-ctl set tor_mode tunnel            # Tor از طریق WARP (نیازمند بسته Tor در v2.0.0+)
 aether-ctl set psiphon_mode tunnel        # Psiphon از طریق WARP (v2.1+)
+aether-ctl set psiphon_mode only          # فقط Psiphon، بدون تونل WARP (v2.1+)
+aether-ctl set protocol disabled         # بدون MASQUE/WG/gool/MIM؛ حالت only و Tor خاموش
 aether-ctl set psiphon_region DE          # درخواست خروجی Psiphon در آلمان (v2.1+)
 aether-ctl set exit_loc '!IR,AZ,RU'       # رد کردن خروجی در آن کشورها (v2.1+)
 aether-ctl set stats 1                    # ثبت آمار ترافیک هر دقیقه (v2.1+)
@@ -141,7 +143,9 @@ UCI `wiw_outer` و `wiw_inner`؛ خالی = اسکن هر دو مرحله توس
 ریلیز، برنامه کمکی `psiphon-tunnel-core` را در پوشه `pt/` همراه باینری قرار
 می‌دهند)، محدودسازی کشور خروج (`exit_loc`)، ثبت آمار ترافیک (`stats`)، منابع
 رله Tor (`tor_relays`)، شنونده HTTP/CONNECT تور (`tor_http`) و حالت اسکن
-`verified`.
+`verified`. برای اجرای فقط Psiphon، `psiphon_mode=only`، `tor_mode=off` و
+`protocol=disabled` را انتخاب کنید؛ سرویس هسته Aether برای میزبانی Psiphon
+همچنان باید فعال بماند.
 هسته v2.3.0 و جدیدتر gool را به تونل WARP داخل MASQUE تغییر می‌دهد.
 `gool_carrier=masque` (پیش‌فرض) از `--gool` جدید با `gool_peer` اختیاری استفاده
 می‌کند و `gool_carrier=classic` با `--gool-classic` و endpointهای کلاسیک

@@ -1,0 +1,33 @@
+#!/bin/sh
+# Test double for OpenWrt's /etc/rc.common.
+#
+# Installed init scripts carry the shebang "#!/bin/sh /etc/rc.common", so the
+# kernel invokes: /bin/sh /etc/rc.common <initscript> <action> [args...]
+# This double records service-management actions instead of touching procd or
+# creating /etc/rc.d symlinks.
+
+LOG="${MOCK_RCD_LOG:-/tmp/mock-rcd.log}"
+
+initscript="$1"
+action="$2"
+
+name="${initscript##*/}"
+
+case "$action" in
+	enable)
+		printf 'enable %s\n' "$name" >>"$LOG"
+		exit 0
+		;;
+	disable)
+		printf 'disable %s\n' "$name" >>"$LOG"
+		exit 0
+		;;
+	start | stop | restart | reload | boot | shutdown)
+		printf '%s %s\n' "$action" "$name" >>"$LOG"
+		exit 0
+		;;
+	*)
+		printf '%s %s\n' "${action:-none}" "$name" >>"$LOG"
+		exit 0
+		;;
+esac

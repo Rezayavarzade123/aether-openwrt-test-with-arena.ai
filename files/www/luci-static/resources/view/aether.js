@@ -106,6 +106,23 @@ function aetherCoreSupportsV23(version) {
 	return Number(m[1]) > 2 || (Number(m[1]) === 2 && Number(m[2]) >= 3);
 }
 
+/* Summarize configured Psiphon mode and surface the common missing-helper
+ * failure. Only trust the log diagnosis while the service is down, so a stale
+ * crash message cannot override a currently running instance. */
+function aetherPsiphonState(mode, version, logs, running) {
+	if (!mode || mode === 'off')
+		return 'off';
+	if (!aetherCoreSupportsV21(version))
+		return 'unsupported';
+	if (!running && /psiphon needs the psiphon-tunnel-core console client/i.test(String(logs || '')))
+		return 'helper-missing';
+	if (mode === 'only')
+		return 'only';
+	if (mode === 'tunnel' || mode === 'reverse')
+		return 'enabled';
+	return 'invalid';
+}
+
 function aetherSyncProfileChoices(profileOpt, section_id, protocol) {
 	var labels = aetherProfileLabels(protocol);
 	var keys = Object.keys(labels);
@@ -609,17 +626,24 @@ return view.extend({
 				row('Tor', 'Needs core v2.0+');
 			}
 
-			if (supportsV21) {
-				if (!st.psiphonMode || st.psiphonMode === 'off') {
-					row('Psiphon', 'Disabled');
-				} else if (st.psiphonMode === 'only') {
-					row('Psiphon', 'Enabled (Psiphon only, no WARP tunnel)');
-				} else {
-					var psiphonAddr = String(st.psiphonBind || '127.0.0.1:1821').replace(/0\.0\.0\.0/, '127.0.0.1');
-					row('Psiphon', E('span', {}, ['Enabled at ', E('code', {}, psiphonAddr)]));
-				}
-			} else {
+			var psiphonState = aetherPsiphonState(st.psiphonMode, st.version, st.logs, st.running);
+			if (psiphonState === 'off') {
+				row('Psiphon', 'Disabled');
+			} else if (psiphonState === 'unsupported') {
 				row('Psiphon', 'Needs core v2.1+');
+			} else if (psiphonState === 'helper-missing') {
+				row('Psiphon', E('span', { 'style': 'color:#c0392b;font-weight:600' }, [
+					'Failed: helper missing at ',
+					E('code', {}, '/usr/bin/pt/psiphon-tunnel-core'),
+					'. Reinstall/update the Aether client to restore it.'
+				]));
+			} else if (psiphonState === 'only') {
+				row('Psiphon', 'Enabled (Psiphon only, no WARP tunnel)');
+			} else if (psiphonState === 'enabled') {
+				var psiphonAddr = String(st.psiphonBind || '127.0.0.1:1821').replace(/0\.0\.0\.0/, '127.0.0.1');
+				row('Psiphon', E('span', {}, ['Enabled at ', E('code', {}, psiphonAddr)]));
+			} else {
+				row('Psiphon', 'Invalid mode');
 			}
 
 			var btns = E('div', {
@@ -920,12 +944,15 @@ return view.extend({
 				return callRCInit('aether', value === '1' ? 'enable' : 'disable');
 			};
 
-			o = s.option(form.ListValue, 'protocol', 'Protocol');
+			o = s.option(form.ListValue, 'protocol', 'Protocol',
+				'In generated mode, choose Disabled with Psiphon Mode set to only and Tor Mode off to omit MASQUE/WireGuard/gool/MIM tunnel flags. Manual command mode overrides this setting. The Aether core service must stay running to host embedded Psiphon.');
 			o.value('masque', 'MASQUE (recommended)');
 			o.value('wg', 'WireGuard');
 			o.value('gool', supportsV23 ? 'gool (WARP over MASQUE)' : 'WARP-in-WARP');
 			if (supportsV20)
 				o.value('mim', 'MASQUE-in-MASQUE');
+			if (supportsV21)
+				o.value('disabled', 'Disabled (Psiphon only; no WARP tunnel)');
 			o.default = 'masque';
 			var protocolOpt = o;
 			var masqueOptionOpts = [];
@@ -1300,7 +1327,7 @@ return view.extend({
 
 			if (supportsV21) {
 				s = m.section(form.NamedSection, 'main', 'aether', 'Psiphon (Core v2.1+)',
-					'Embedded Psiphon transport. Tunnel carries Psiphon inside WARP, reverse dials WARP through Psiphon (MASQUE only), and only runs plain Psiphon without a WARP tunnel.');
+					'Embedded Psiphon transport. Tunnel carries Psiphon inside WARP, reverse dials WARP through Psiphon (MASQUE only), and only runs plain Psiphon without a WARP tunnel. In Psiphon-only mode the Aether core service remains running to host Psiphon.');
 
 				o = s.option(form.ListValue, 'psiphon_mode', 'Psiphon Mode');
 				o.value('off', 'Off');

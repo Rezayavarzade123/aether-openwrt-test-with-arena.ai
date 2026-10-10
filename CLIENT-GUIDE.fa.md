@@ -250,7 +250,19 @@ state را وقتی والدهای آن root-owned نباشند یا برای گ
   MASQUE را روی HTTP/2 اجرا می‌کند) و مانند Tor reverse، روی بقیه پروتکل‌ها در
   هر دو جهت در زمان `set` رد می‌شود.
 - `only` Psiphon ساده را روی شنونده SOCKS5 اصلی سرو می‌کند و تونل WARP برقرار
-  نمی‌کند.
+  نمی‌کند. در **Basic Settings → Protocol** گزینه **Disabled** را برای حذف
+  پرچم‌های MASQUE/WireGuard/gool/MIM انتخاب کنید، **Psiphon Mode → only** را
+  نگه دارید و **Tor Mode → Off** را تنظیم کنید. سرویس هسته Aether برای میزبانی
+  Psiphon داخلی همچنان باید فعال باشد.
+
+معادل خط فرمان (ابتدا حالت Psiphon را تنظیم کنید):
+
+```sh
+aether-ctl set tor_mode off
+aether-ctl set psiphon_mode only
+aether-ctl set protocol disabled
+aether-ctl restart
+```
 
 چیز دیگری لازم نیست: اعتبارنامه‌ها و فهرست سرورها داخل هسته ساخته شده‌اند و
 آرشیوهای رسمی ریلیز، برنامه کمکی `psiphon-tunnel-core` را در پوشه `pt/` کنار

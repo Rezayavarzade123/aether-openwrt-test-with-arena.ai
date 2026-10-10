@@ -2,6 +2,7 @@
 # Data-plane watchdog for the procd-managed Aether process.
 
 UCI=/sbin/uci
+[ -x "$UCI" ] || UCI=/usr/sbin/uci
 TAG=aether-watchdog
 
 get_config() {

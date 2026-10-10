@@ -64,6 +64,15 @@ expect_ok "accept gool_carrier classic" gool_carrier classic
 expect_ok "accept gool_peer" gool_peer 188.114.97.1:2408
 expect_ok "accept scan_mode verified" scan_mode verified
 
+# ---- disabled transport is a guarded Psiphon-only choice ----
+uci_set psiphon_mode only
+uci_set tor_mode off
+expect_ok "accept disabled protocol with Psiphon only" protocol disabled
+expect_reject "disabled protocol cannot turn Psiphon off" psiphon_mode off "requires psiphon_mode=only"
+expect_reject "disabled protocol cannot enable Tor" tor_mode tunnel "requires tor_mode=off"
+expect_ok "restore protocol masque" protocol masque
+expect_ok "restore Psiphon tunnel mode" psiphon_mode tunnel
+
 # ---- validation rejections ----
 expect_reject "reject bad psiphon_mode" psiphon_mode maybe "Invalid psiphon_mode"
 expect_reject "reject bad psiphon_bind" psiphon_bind 127.0.0.1 "Invalid psiphon_bind"
@@ -84,6 +93,9 @@ sed -i '/^protocol=/d' "$MOCK_UCI_FILE"; printf 'protocol=masque\n' >>"$MOCK_UCI
 # ---- version gates ----
 MOCK_CORE_VERSION="2.0.0"
 expect_reject "psiphon_mode gated to v2.1" psiphon_mode tunnel "requires Aether core v2.1.0"
+uci_set psiphon_mode only
+uci_set tor_mode off
+expect_reject "disabled protocol gated to v2.1" protocol disabled "requires Aether core v2.1.0"
 expect_reject "exit_loc gated to v2.1" exit_loc DE,SE "requires Aether core v2.1.0"
 expect_reject "stats gated to v2.1" stats 1 "requires Aether core v2.1.0"
 expect_reject "tor_relays gated to v2.1" tor_relays only "requires Aether core v2.1.0"

@@ -42,7 +42,7 @@ During install you will be asked:
 
 - **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip|check-tor|check-psiphon` (`tor-ip`/`psiphon-ip` aliases, `Tor: true|false IP:`, `Psiphon: <ip> (<country>)`), `aether-ctl change-version <vX.Y.Z>`, `aether-ctl passwall <…>`, performance/gool options, and v2 MIM, QUIC v2, ECH, Tor, Psiphon, exit-location, and stats settings. `set` validates values (`tor_bind` as `ip:port`, `tor_dir` absolute, `exit_loc` as a country list, `reverse` only with MASQUE both ways); `status` and `show` report effective settings, e.g. `balanced (stored firewall)`.
 - **LuCI**: Services -> Aether
-  - Status table (state, version, endpoint, transport, SOCKS5 address, and configured Tor/Psiphon state)
+  - Status table (state, version, endpoint, transport, SOCKS5 address, and configured Tor/Psiphon state; shows a missing Psiphon helper instead of reporting it as enabled)
   - Start / Stop / Restart buttons
   - Connection test buttons with accurate millisecond timing, Public IP geolocation check, Tor exit check (when Tor is enabled), and Psiphon exit check (when Psiphon is enabled)
   - Real-time live logs (auto-updating, pause/resume, auto-scroll)
@@ -107,6 +107,8 @@ aether-ctl change-version v1.5.0 --start
 aether-ctl update --version v1.5.0 --start
 aether-ctl set tor_mode tunnel            # Tor through WARP (v2.0.0+ Tor build)
 aether-ctl set psiphon_mode tunnel        # Psiphon through WARP (v2.1+)
+aether-ctl set psiphon_mode only          # Psiphon without a WARP tunnel (v2.1+)
+aether-ctl set protocol disabled         # no MASQUE/WG/gool/MIM; requires Psiphon mode only and Tor off
 aether-ctl set psiphon_region DE          # ask for a Psiphon exit in Germany (v2.1+)
 aether-ctl set exit_loc '!IR,AZ,RU'       # refuse exits in those countries (v2.1+)
 aether-ctl set stats 1                    # log traffic totals every minute (v2.1+)
@@ -149,7 +151,8 @@ capability profile:
   unexposed.
 - **Core v2.1.0 and newer:** adds the embedded Psiphon (`psiphon_mode` with
   `psiphon_bind`/`psiphon_http`/`psiphon_region`/`psiphon_shape`; the official
-  release archives ship the `psiphon-tunnel-core` helper in `pt/`), exit-country
+  release archives ship the `psiphon-tunnel-core` helper in `pt/`, which the
+  installer places at `/usr/bin/pt/psiphon-tunnel-core`), exit-country
   pinning (`exit_loc`), traffic stats logging (`stats`), Tor relay sources
   (`tor_relays`) and the Tor HTTP/CONNECT listener (`tor_http`), and the
   `verified` scan mode.
@@ -253,6 +256,33 @@ needed:
   instead (edit that node in Services -> Passwall2 -> Nodes, or delete it and
   create it again).
 
+## Tests
+
+The client ships a self-contained test suite. Nothing needs a router, a network
+connection, or root on your machine.
+
+```sh
+sh tests/run-all.sh                 # run every suite with /bin/sh
+sh tests/run-all.sh --portability   # also re-run each suite under dash, bash and BusyBox ash
+```
+
+`--portability` matters because OpenWrt executes these scripts with BusyBox ash,
+not bash; it is the mode that proves router compatibility.
+
+| Suite | What it covers |
+| --- | --- |
+| `test-static.sh` | Source contract checks: required options, flags and helpers are present in each shipped file |
+| `test-helpers-mock.sh` | Unit tests for the pure helpers in `install.sh`, `aether-ctl` and `aether-watchdog` (checksum validation, tag parsing, version gates, URL redaction, listen-address resolution) |
+| `test-luci-js.js` | Unit tests for the LuCI view's pure helpers, Psiphon failure-state classification, and the cross-language capability-gate check (needs Node.js; skipped automatically without it) |
+| `test-ctl-mock.sh` | `aether-ctl do_set` validation and core-version gating |
+| `test-init-mock.sh` | `start_service` command-line generation across the core-version matrix |
+| `test-install-mock.sh` | End-to-end installer, updater and uninstaller runs in a synthetic OpenWrt rootfs, including Psiphon-only startup with and without the bundled helper; `wget-shim.sh` stands in for GitHub |
+
+The helpers under test are extracted from the real source files at run time
+rather than copied, so a renamed or reformatted function fails the suite instead
+of silently testing nothing. The end-to-end suite skips itself cleanly when
+BusyBox or user namespaces are unavailable.
+
 ## Notes
 
 - Requires OpenWrt 24.10+ with musl libc (apk on 25.12+, opkg on older)
@@ -262,7 +292,7 @@ needed:
 - `curl` is optional (asked during install, defaults to Yes). It enables LuCI connection tests and the data-plane recovery watchdog.
 - Zero Trust service-token secrets are kept in the root-only UCI config and redacted from CLI and service command output.
 - Tor (core v2 Tor builds): controls are shown by Core version, but a Core package must also include Tor support. If `:1820` listens but Tor never connects, check `logread -e aether` for filesystem-permission errors — the service repairs `/` and `/etc` ownership/modes automatically on start. Verify with `aether-ctl check-tor` (expect `Tor: true IP: …`).
-- Psiphon (core v2.1+): the official release archives ship the `psiphon-tunnel-core` helper in the `pt/` folder next to the binary; the installer keeps that folder at `/usr/bin/pt`. `psiphon_mode=tunnel` serves a second SOCKS5 listener on `127.0.0.1:1821` (the main `:1819` keeps the WARP exit); verify with `aether-ctl check-psiphon`.
+- Psiphon (core v2.1+): the official release archives ship `pt/psiphon-tunnel-core`; the installer places it at `/usr/bin/pt/psiphon-tunnel-core`. `psiphon_mode=tunnel` serves a second SOCKS5 listener on `127.0.0.1:1821` (the main `:1819` keeps the WARP exit); verify with `aether-ctl check-psiphon`. To run Psiphon without MASQUE/WireGuard/gool/MIM, set `psiphon_mode=only`, `tor_mode=off`, and `protocol=disabled`. The Aether core service still has to run to host embedded Psiphon.
 - Manual command mode bypasses every UCI option (including Tor): paste full commands or bare arguments; a leading `/usr/bin/aether(-run)` is stripped automatically. Probes read the manual binds; `check-tor` refuses fast when `--tor` is absent.
 - See [CLIENT-GUIDE.en.md](CLIENT-GUIDE.en.md) for the settings, protocols,
   watchdog behavior, Zero Trust configuration, and troubleshooting.
