@@ -294,6 +294,29 @@ start_service() {
 	config_get access_token main access_token ''
 	config_get_bool watchdog_enabled main watchdog_enabled 1
 
+	# An explicitly disabled transport is the generated Psiphon-only mode:
+	# keep the Aether core process as Psiphon's host, but do not start WARP.
+	# Manual command mode remains an explicit operator override.
+	if [ "$command_mode" != "manual" ] && [ "$protocol" = "disabled" ]; then
+		if [ "$supports_v21" -ne 1 ]; then
+			logger -t aether "ERROR: protocol=disabled requires Aether core v2.1.0 or newer"
+			echo "aether: protocol=disabled requires Aether core v2.1.0 or newer" >&2
+			return 1
+		fi
+		if [ "$psiphon_mode" != "only" ]; then
+			logger -t aether "ERROR: protocol=disabled requires psiphon_mode=only"
+			echo "aether: set psiphon_mode=only to use protocol=disabled" >&2
+			return 1
+		fi
+		case "$tor_mode" in
+			off|'') ;;
+			*)
+				logger -t aether "ERROR: protocol=disabled requires tor_mode=off"
+				echo "aether: turn Tor off to use protocol=disabled" >&2
+				return 1 ;;
+		esac
+	fi
+
 	if { [ -n "$access_id" ] || [ -n "$access_secret" ] || [ -n "$access_token" ]; } &&
 	   [ -z "$team" ]; then
 		logger -t aether "ERROR: Zero Trust credentials require a team name"
@@ -431,6 +454,10 @@ start_service() {
 			procd_append_param command --mim
 			case "$obfuscation_profile" in firewall|gfw|off) ;; *) obfuscation_profile=firewall ;; esac
 			;;
+		disabled)
+			# No Aether tunnel protocol; --psiphon-only is appended below.
+			obfuscation_profile=off
+			;;
 		*)
 			logger -t aether "ERROR: invalid protocol: $protocol"
 			procd_close_instance
@@ -469,7 +496,8 @@ start_service() {
 		logger -t aether "Ignoring exit_loc/stats: Aether v$installed_version requires v2.1.0 or newer"
 	fi
 
-	[ -n "$obfuscation_profile" ] && procd_append_param command --noize "$obfuscation_profile"
+	[ "$protocol" != "disabled" ] && [ -n "$obfuscation_profile" ] &&
+		procd_append_param command --noize "$obfuscation_profile"
 	if [ "$protocol" = "masque" ] || [ "$protocol" = "mim" ]; then
 		[ "$http2_mode" = "1" ] && procd_append_param command --h2
 		[ "$supports_v20" -eq 1 ] && [ "$quic_v2" = "0" ] &&

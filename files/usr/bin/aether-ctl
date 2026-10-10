@@ -297,6 +297,7 @@ do_show() {
 	case "${protocol:-masque}" in
 		wg|gool)
 			case "$obfuscation_profile" in balanced|aggressive|light|off) ;; *) obfuscation_profile=balanced ;; esac ;;
+		disabled) obfuscation_profile=off ;;
 		*)
 			case "$obfuscation_profile" in firewall|gfw|off) ;; *) obfuscation_profile=firewall ;; esac ;;
 	esac
@@ -850,7 +851,7 @@ do_set() {
 		echo ""
 		echo "Options:"
 		echo "  enabled             yes/no"
-		echo "  protocol            masque/wg/gool/mim (mim requires v2.0.0+)"
+		echo "  protocol            masque/wg/gool/mim or disabled (disabled requires Psiphon-only v2.1+)"
 		echo "  socks_listen        ip:port"
 		echo "  http_proxy          ip:port (optional HTTP CONNECT proxy)"
 		echo "  upstream_proxy      proxy URL (v1.7+ upstream chaining; e.g. socks5://[user:pass@]host:port)"
@@ -968,7 +969,20 @@ do_set() {
 						log_err "mim requires Aether core v2.0.0 or newer"
 						return 1
 					} ;;
-				*) log_err "Invalid protocol: $value (use masque/wg/gool/mim)"; return 1 ;;
+				disabled)
+					[ -n "$installed_version" ] && core_supports_v21 "$installed_version" || {
+						log_err "protocol=disabled requires Aether core v2.1.0 or newer"
+						return 1
+					}
+					[ "$(uci_get psiphon_mode)" = "only" ] || {
+						log_err "protocol=disabled requires psiphon_mode=only"
+						return 1
+					}
+					case "$(uci_get tor_mode)" in
+						off|'') ;;
+						*) log_err "protocol=disabled requires tor_mode=off"; return 1 ;;
+					esac ;;
+				*) log_err "Invalid protocol: $value (use masque/wg/gool/mim or disabled)"; return 1 ;;
 			esac
 			if [ "$value" != "masque" ]; then
 				proto_tor=$(uci_get tor_mode)
@@ -1034,6 +1048,10 @@ do_set() {
 			esac ;;
 		tor_mode)
 			case "$value" in off|tunnel|reverse|only) ;; *) log_err "Invalid tor_mode: use off/tunnel/reverse/only"; return 1 ;; esac
+			if [ "$(uci_get protocol)" = "disabled" ] && [ "$value" != "off" ]; then
+				log_err "protocol=disabled requires tor_mode=off"
+				return 1
+			fi
 			if [ "$value" = "reverse" ]; then
 				tor_proto=$(uci_get protocol)
 				if [ "${tor_proto:-masque}" != "masque" ]; then
@@ -1065,6 +1083,10 @@ do_set() {
 			esac ;;
 		psiphon_mode)
 			case "$value" in off|tunnel|reverse|only) ;; *) log_err "Invalid psiphon_mode: use off/tunnel/reverse/only"; return 1 ;; esac
+			if [ "$(uci_get protocol)" = "disabled" ] && [ "$value" != "only" ]; then
+				log_err "protocol=disabled requires psiphon_mode=only"
+				return 1
+			fi
 			if [ "$value" = "reverse" ]; then
 				tor_proto=$(uci_get protocol)
 				if [ "${tor_proto:-masque}" != "masque" ]; then

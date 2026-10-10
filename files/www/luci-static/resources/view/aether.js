@@ -944,12 +944,15 @@ return view.extend({
 				return callRCInit('aether', value === '1' ? 'enable' : 'disable');
 			};
 
-			o = s.option(form.ListValue, 'protocol', 'Protocol');
+			o = s.option(form.ListValue, 'protocol', 'Protocol',
+				'In generated mode, choose Disabled with Psiphon Mode set to only to omit MASQUE/WireGuard/gool/MIM tunnel flags. Manual command mode overrides this setting. The Aether core service must stay running to host embedded Psiphon.');
 			o.value('masque', 'MASQUE (recommended)');
 			o.value('wg', 'WireGuard');
 			o.value('gool', supportsV23 ? 'gool (WARP over MASQUE)' : 'WARP-in-WARP');
 			if (supportsV20)
 				o.value('mim', 'MASQUE-in-MASQUE');
+			if (supportsV21)
+				o.value('disabled', 'Disabled (Psiphon only; no WARP tunnel)');
 			o.default = 'masque';
 			var protocolOpt = o;
 			var masqueOptionOpts = [];
@@ -1324,7 +1327,7 @@ return view.extend({
 
 			if (supportsV21) {
 				s = m.section(form.NamedSection, 'main', 'aether', 'Psiphon (Core v2.1+)',
-					'Embedded Psiphon transport. Tunnel carries Psiphon inside WARP, reverse dials WARP through Psiphon (MASQUE only), and only runs plain Psiphon without a WARP tunnel.');
+					'Embedded Psiphon transport. Tunnel carries Psiphon inside WARP, reverse dials WARP through Psiphon (MASQUE only), and only runs plain Psiphon without a WARP tunnel. In Psiphon-only mode the Aether core service remains running to host Psiphon.');
 
 				o = s.option(form.ListValue, 'psiphon_mode', 'Psiphon Mode');
 				o.value('off', 'Off');
