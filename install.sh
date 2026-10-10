@@ -61,9 +61,13 @@ fetch_retry() {
 }
 
 # True when the file's first line is "<64 hex chars> <name>" — a real
-# sha256sum file, not an HTML error page saved by a proxy or portal.
+# sha256sum file, not an HTML error page saved by a proxy or portal, and not
+# an empty file left behind when a fallback source had no matching entry.
 valid_checksum_file() {
-    awk 'NR==1 { exit !(length($1) == 64 && $1 ~ /^[0-9a-fA-F]+$/ && $2 != "") }' "$1"
+    awk 'NR == 1 {
+            ok = (length($1) == 64 && $1 ~ /^[0-9a-fA-F]+$/ && $2 != "")
+        }
+        END { exit (NR >= 1 && ok) ? 0 : 1 }' "$1"
 }
 
 # Print "<digest>  <name>" for <name> from a SHA256SUMS.txt style file.

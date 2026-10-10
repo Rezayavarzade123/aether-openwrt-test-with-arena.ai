@@ -253,6 +253,33 @@ needed:
   instead (edit that node in Services -> Passwall2 -> Nodes, or delete it and
   create it again).
 
+## Tests
+
+The client ships a self-contained test suite. Nothing needs a router, a network
+connection, or root on your machine.
+
+```sh
+sh tests/run-all.sh                 # run every suite with /bin/sh
+sh tests/run-all.sh --portability   # also re-run each suite under dash, bash and BusyBox ash
+```
+
+`--portability` matters because OpenWrt executes these scripts with BusyBox ash,
+not bash; it is the mode that proves router compatibility.
+
+| Suite | What it covers |
+| --- | --- |
+| `test-static.sh` | Source contract checks: required options, flags and helpers are present in each shipped file |
+| `test-helpers-mock.sh` | Unit tests for the pure helpers in `install.sh`, `aether-ctl` and `aether-watchdog` (checksum validation, tag parsing, version gates, URL redaction, listen-address resolution) |
+| `test-luci-js.js` | Unit tests for the LuCI view's pure helpers, plus a cross-language check that the UI's `aetherCoreSupportsVNN` gates agree with the `core_supports_vNN` gates `aether-ctl` enforces (needs Node.js; skipped automatically without it) |
+| `test-ctl-mock.sh` | `aether-ctl do_set` validation and core-version gating |
+| `test-init-mock.sh` | `start_service` command-line generation across the core-version matrix |
+| `test-install-mock.sh` | End-to-end `install.sh`, `update.sh` and `uninstall.sh` runs inside a synthetic OpenWrt rootfs (BusyBox chroot in an unprivileged user namespace), with `tests/fixtures/wget-shim.sh` standing in for GitHub |
+
+The helpers under test are extracted from the real source files at run time
+rather than copied, so a renamed or reformatted function fails the suite instead
+of silently testing nothing. The end-to-end suite skips itself cleanly when
+BusyBox or user namespaces are unavailable.
+
 ## Notes
 
 - Requires OpenWrt 24.10+ with musl libc (apk on 25.12+, opkg on older)

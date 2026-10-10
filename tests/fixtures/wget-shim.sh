@@ -4,8 +4,11 @@
 # Failure simulation:
 #   /tmp/shim-fail-sha-once   -> first .sha256 request fails (retry test)
 #   /tmp/shim-fail-sha-always -> every .sha256 request fails (fallback test)
-LOG=/tmp/wget-shim.log
-REPO=/home/user/aether-openwrt-test-with-arena.ai
+LOG="${WGET_SHIM_LOG:-/tmp/wget-shim.log}"
+# Repo root, so raw.githubusercontent.com URLs resolve to local files. Derived
+# from this fixture's own location (tests/fixtures/ -> ../..) and overridable
+# for sandboxes such as the chroot used by tests/test-install-mock.sh.
+REPO="${AETHER_REPO_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." 2>/dev/null && pwd)}"
 
 outfile=""
 url=""

@@ -8,6 +8,17 @@
 set -e
 umask 077
 
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+RESET='\033[0m'
+
+info()  { printf "${GREEN}[+]${RESET} %s\n" "$*"; }
+warn()  { printf "${YELLOW}[!]${RESET} %s\n" "$*"; }
+error() { printf "${RED}[-]${RESET} %s\n" "$*" >&2; }
+
+# Helpers must exist before argument parsing: an unknown option is reported
+# with error() below, and `set -e` turns a missing helper into exit 127.
 PURGE=0
 for arg in "$@"; do
     case "$arg" in
@@ -22,15 +33,6 @@ for arg in "$@"; do
             ;;
     esac
 done
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-RESET='\033[0m'
-
-info()  { printf "${GREEN}[+]${RESET} %s\n" "$*"; }
-warn()  { printf "${YELLOW}[!]${RESET} %s\n" "$*"; }
-error() { printf "${RED}[-]${RESET} %s\n" "$*" >&2; }
 
 if [ "$(id -u)" -ne 0 ]; then
     error "Run as root on the OpenWrt device"

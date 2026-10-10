@@ -1,0 +1,58 @@
+#!/bin/sh
+# Test double for OpenWrt's `uci`.
+#
+# Backing store: a flat "section.option=value" file at /tmp/mock-uci-store,
+# layered on top of the real /etc/config/aether so `get` still reflects the
+# shipped defaults the way the genuine binary would.
+#
+# Supports the subset the installer and helpers use:
+#   uci [-q] get <package>.<section>.<option>
+#   uci set <package>.<section>.<option>=<value>
+#   uci commit <package>
+
+STORE="${MOCK_UCI_STORE:-/tmp/mock-uci-store}"
+CONFIG="${MOCK_UCI_CONFIG:-/etc/config/aether}"
+
+quiet=0
+if [ "$1" = "-q" ]; then
+	quiet=1
+	shift
+fi
+
+cmd="$1"
+shift
+
+# Strip the leading "aether." package prefix, keep "section.option".
+strip_pkg() {
+	printf '%s' "${1#aether.}"
+}
+
+case "$cmd" in
+	get)
+		key="$(strip_pkg "${1:-}")"
+		opt="${key#*.}"
+		val="$(sed -n "s|^${key}=||p" "$STORE" 2>/dev/null | head -n1)"
+		if [ -z "$val" ]; then
+			# Fall back to the on-disk UCI config, e.g. "option enabled '0'".
+			val="$(sed -n "s|^[[:space:]]*option[[:space:]]\{1,\}${opt}[[:space:]]\{1,\}'\([^']*\)'.*|\1|p" \
+				"$CONFIG" 2>/dev/null | head -n1)"
+		fi
+		[ -n "$val" ] || exit 1
+		printf '%s\n' "$val"
+		;;
+	set)
+		kv="${1:-}"
+		key="$(strip_pkg "${kv%%=*}")"
+		val="${kv#*=}"
+		[ -n "$key" ] || exit 1
+		sed -i "\|^${key}=|d" "$STORE" 2>/dev/null
+		printf '%s=%s\n' "$key" "$val" >>"$STORE"
+		;;
+	commit | add | delete | rename | reorder | show | export | changes)
+		exit 0
+		;;
+	*)
+		[ "$quiet" -eq 1 ] || echo "mock-uci: unsupported command '$cmd'" >&2
+		exit 1
+		;;
+esac
