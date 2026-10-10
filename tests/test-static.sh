@@ -127,7 +127,9 @@ assert_contains files/usr/bin/aether-ctl 'psiphon_mode|psiphon_bind|psiphon_http
 assert_contains files/usr/bin/aether-ctl 'protocol=disabled requires psiphon_mode=only'
 assert_contains files/etc/init.d/aether 'protocol=disabled requires psiphon_mode=only'
 assert_contains files/www/luci-static/resources/view/aether.js "Disabled (Psiphon only; no WARP tunnel)"
+assert_contains files/www/luci-static/resources/view/aether.js 'Tor Mode off to omit'
 assert_contains files/www/luci-static/resources/view/aether.js 'Aether core service must stay running to host embedded Psiphon'
+assert_contains files/etc/init.d/aether 'protocol=disabled requires tor_mode=off'
 assert_contains files/usr/bin/aether-ctl 'gool_carrier|gool_peer'
 assert_contains files/usr/bin/aether-ctl 'requires Aether core v2.1.0 or newer'
 assert_contains files/usr/bin/aether-ctl 'requires Aether core v2.3.0 or newer'

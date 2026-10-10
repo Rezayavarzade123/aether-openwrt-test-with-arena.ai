@@ -851,7 +851,7 @@ do_set() {
 		echo ""
 		echo "Options:"
 		echo "  enabled             yes/no"
-		echo "  protocol            masque/wg/gool/mim or disabled (disabled requires Psiphon-only v2.1+)"
+		echo "  protocol            masque/wg/gool/mim or disabled (requires Psiphon-only v2.1+ and Tor off)"
 		echo "  socks_listen        ip:port"
 		echo "  http_proxy          ip:port (optional HTTP CONNECT proxy)"
 		echo "  upstream_proxy      proxy URL (v1.7+ upstream chaining; e.g. socks5://[user:pass@]host:port)"

@@ -108,7 +108,7 @@ aether-ctl update --version v1.5.0 --start
 aether-ctl set tor_mode tunnel            # Tor through WARP (v2.0.0+ Tor build)
 aether-ctl set psiphon_mode tunnel        # Psiphon through WARP (v2.1+)
 aether-ctl set psiphon_mode only          # Psiphon without a WARP tunnel (v2.1+)
-aether-ctl set protocol disabled         # no MASQUE/WG/gool/MIM; requires Psiphon mode only
+aether-ctl set protocol disabled         # no MASQUE/WG/gool/MIM; requires Psiphon mode only and Tor off
 aether-ctl set psiphon_region DE          # ask for a Psiphon exit in Germany (v2.1+)
 aether-ctl set exit_loc '!IR,AZ,RU'       # refuse exits in those countries (v2.1+)
 aether-ctl set stats 1                    # log traffic totals every minute (v2.1+)
@@ -292,7 +292,7 @@ BusyBox or user namespaces are unavailable.
 - `curl` is optional (asked during install, defaults to Yes). It enables LuCI connection tests and the data-plane recovery watchdog.
 - Zero Trust service-token secrets are kept in the root-only UCI config and redacted from CLI and service command output.
 - Tor (core v2 Tor builds): controls are shown by Core version, but a Core package must also include Tor support. If `:1820` listens but Tor never connects, check `logread -e aether` for filesystem-permission errors — the service repairs `/` and `/etc` ownership/modes automatically on start. Verify with `aether-ctl check-tor` (expect `Tor: true IP: …`).
-- Psiphon (core v2.1+): the official release archives ship `pt/psiphon-tunnel-core`; the installer places it at `/usr/bin/pt/psiphon-tunnel-core`. `psiphon_mode=tunnel` serves a second SOCKS5 listener on `127.0.0.1:1821` (the main `:1819` keeps the WARP exit); verify with `aether-ctl check-psiphon`. To run Psiphon without MASQUE/WireGuard/gool/MIM, set `psiphon_mode=only` and `protocol=disabled`. The Aether core service still has to run to host embedded Psiphon.
+- Psiphon (core v2.1+): the official release archives ship `pt/psiphon-tunnel-core`; the installer places it at `/usr/bin/pt/psiphon-tunnel-core`. `psiphon_mode=tunnel` serves a second SOCKS5 listener on `127.0.0.1:1821` (the main `:1819` keeps the WARP exit); verify with `aether-ctl check-psiphon`. To run Psiphon without MASQUE/WireGuard/gool/MIM, set `psiphon_mode=only`, `tor_mode=off`, and `protocol=disabled`. The Aether core service still has to run to host embedded Psiphon.
 - Manual command mode bypasses every UCI option (including Tor): paste full commands or bare arguments; a leading `/usr/bin/aether(-run)` is stripped automatically. Probes read the manual binds; `check-tor` refuses fast when `--tor` is absent.
 - See [CLIENT-GUIDE.en.md](CLIENT-GUIDE.en.md) for the settings, protocols,
   watchdog behavior, Zero Trust configuration, and troubleshooting.

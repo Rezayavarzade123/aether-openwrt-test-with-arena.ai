@@ -945,7 +945,7 @@ return view.extend({
 			};
 
 			o = s.option(form.ListValue, 'protocol', 'Protocol',
-				'In generated mode, choose Disabled with Psiphon Mode set to only to omit MASQUE/WireGuard/gool/MIM tunnel flags. Manual command mode overrides this setting. The Aether core service must stay running to host embedded Psiphon.');
+				'In generated mode, choose Disabled with Psiphon Mode set to only and Tor Mode off to omit MASQUE/WireGuard/gool/MIM tunnel flags. Manual command mode overrides this setting. The Aether core service must stay running to host embedded Psiphon.');
 			o.value('masque', 'MASQUE (recommended)');
 			o.value('wg', 'WireGuard');
 			o.value('gool', supportsV23 ? 'gool (WARP over MASQUE)' : 'WARP-in-WARP');
