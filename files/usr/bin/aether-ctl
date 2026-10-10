@@ -3,6 +3,7 @@
 # Usage: aether-ctl {start|stop|restart|status|show|set|version|change-version|test|check-ip|check-tor|check-psiphon|update}
 
 UCI="/sbin/uci"
+[ -x "$UCI" ] || UCI="/usr/sbin/uci"
 PROG="/usr/bin/aether"
 CFG="aether.main"
 

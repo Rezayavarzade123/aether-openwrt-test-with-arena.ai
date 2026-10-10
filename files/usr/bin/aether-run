@@ -2,6 +2,7 @@
 # Root-only launcher that keeps secrets out of procd/ubus/ps output.
 
 UCI=/sbin/uci
+[ -x "$UCI" ] || UCI=/usr/sbin/uci
 
 # Core v2's embedded Tor/Arti creates persistent state beneath --tor-dir.
 # Inherit a private umask so every parent directory passes Arti's security check.

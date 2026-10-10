@@ -65,6 +65,10 @@ if [ "${1:-}" = "--version" ]; then
 	echo "aether 2.3.0 (mock core)"
 	exit 0
 fi
+if [ "${1:-}" = "--print-auth-env" ]; then
+	printf 'TEAM=%s|ID=%s|SECRET=%s|TOKEN=%s|GATEWAY=%s\n' "${AETHER_TEAM:-}" "${AETHER_ACCESS_CLIENT_ID:-}" "${AETHER_ACCESS_CLIENT_SECRET:-}" "${AETHER_ACCESS_TOKEN:-}" "${AETHER_GATEWAY:-}"
+	exit 0
+fi
 case " $* " in
 	*" --psiphon-only "*)
 		if [ ! -x /usr/bin/pt/psiphon-tunnel-core ]; then
@@ -429,6 +433,21 @@ else
 	pass "[$CASE] used the local files/ directory (no raw fetches)"
 fi
 
+# Installer preflight accepts either standard UCI path, so runtime tools must
+# continue working when the only UCI binary is under /usr/sbin.
+new_case uci-in-usr-sbin
+mv "$C/sbin/uci" "$C/usr/sbin/uci"
+printf 'main.team=team.example\nmain.access_id=client-id\nmain.access_secret=client-secret\nmain.access_token=access-token\nmain.gateway=1\n' \
+	>"$C/tmp/mock-uci-store"
+run_install - /pkg/install.sh --non-interactive --no-curl
+assert_rc 0
+run_script - /usr/bin/aether-ctl set protocol wg
+assert_rc 0
+assert_uci main.protocol wg
+run_script - /usr/bin/aether-run --print-auth-env
+assert_rc 0
+assert_log "TEAM=team.example|ID=client-id|SECRET=client-secret|TOKEN=access-token|GATEWAY=1"
+
 # --- mirror support ---------------------------------------------------------
 new_case mirror-flag
 run_install - /pkg/install.sh --non-interactive --no-curl --mirror https://ghproxy.net
@@ -610,6 +629,8 @@ assert_fetch "raw.githubusercontent.com/Rezayavarzade123/aether-openwrt-test-wit
 assert_log "Installation complete!"
 assert_mode /usr/bin/aether 755
 assert_mode /usr/bin/aether-ctl 755
+assert_mode /usr/bin/pt/psiphon-tunnel-core 755
+assert_file_contains /usr/bin/pt/psiphon-tunnel-core "mock psiphon-tunnel-core"
 
 new_case update-forwards-mirror
 run_script - /pkg/update.sh --non-interactive --no-curl --mirror https://ghproxy.net

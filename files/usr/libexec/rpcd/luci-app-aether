@@ -9,6 +9,7 @@
 . /usr/share/libubox/jshn.sh
 
 UCI="/sbin/uci"
+[ -x "$UCI" ] || UCI="/usr/sbin/uci"
 CFG="aether.main"
 
 core_is_v15() {
