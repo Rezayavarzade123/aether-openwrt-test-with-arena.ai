@@ -42,7 +42,7 @@ During install you will be asked:
 
 - **CLI**: `aether-ctl start|stop|restart|status|show|log|test <host>|check-ip|check-tor|check-psiphon` (`tor-ip`/`psiphon-ip` aliases, `Tor: true|false IP:`, `Psiphon: <ip> (<country>)`), `aether-ctl change-version <vX.Y.Z>`, `aether-ctl passwall <…>`, performance/gool options, and v2 MIM, QUIC v2, ECH, Tor, Psiphon, exit-location, and stats settings. `set` validates values (`tor_bind` as `ip:port`, `tor_dir` absolute, `exit_loc` as a country list, `reverse` only with MASQUE both ways); `status` and `show` report effective settings, e.g. `balanced (stored firewall)`.
 - **LuCI**: Services -> Aether
-  - Status table (state, version, endpoint, transport, SOCKS5 address, and configured Tor/Psiphon state)
+  - Status table (state, version, endpoint, transport, SOCKS5 address, and configured Tor/Psiphon state; shows a missing Psiphon helper instead of reporting it as enabled)
   - Start / Stop / Restart buttons
   - Connection test buttons with accurate millisecond timing, Public IP geolocation check, Tor exit check (when Tor is enabled), and Psiphon exit check (when Psiphon is enabled)
   - Real-time live logs (auto-updating, pause/resume, auto-scroll)
@@ -271,10 +271,10 @@ not bash; it is the mode that proves router compatibility.
 | --- | --- |
 | `test-static.sh` | Source contract checks: required options, flags and helpers are present in each shipped file |
 | `test-helpers-mock.sh` | Unit tests for the pure helpers in `install.sh`, `aether-ctl` and `aether-watchdog` (checksum validation, tag parsing, version gates, URL redaction, listen-address resolution) |
-| `test-luci-js.js` | Unit tests for the LuCI view's pure helpers, plus a cross-language check that the UI's `aetherCoreSupportsVNN` gates agree with the `core_supports_vNN` gates `aether-ctl` enforces (needs Node.js; skipped automatically without it) |
+| `test-luci-js.js` | Unit tests for the LuCI view's pure helpers, Psiphon failure-state classification, and the cross-language capability-gate check (needs Node.js; skipped automatically without it) |
 | `test-ctl-mock.sh` | `aether-ctl do_set` validation and core-version gating |
 | `test-init-mock.sh` | `start_service` command-line generation across the core-version matrix |
-| `test-install-mock.sh` | End-to-end `install.sh`, `update.sh` and `uninstall.sh` runs inside a synthetic OpenWrt rootfs (BusyBox chroot in an unprivileged user namespace), with `tests/fixtures/wget-shim.sh` standing in for GitHub |
+| `test-install-mock.sh` | End-to-end installer, updater and uninstaller runs in a synthetic OpenWrt rootfs, including Psiphon-only startup with and without the bundled helper; `wget-shim.sh` stands in for GitHub |
 
 The helpers under test are extracted from the real source files at run time
 rather than copied, so a renamed or reformatted function fails the suite instead

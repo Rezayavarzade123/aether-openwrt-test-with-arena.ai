@@ -65,6 +65,15 @@ if [ "${1:-}" = "--version" ]; then
 	echo "aether 2.3.0 (mock core)"
 	exit 0
 fi
+case " $* " in
+	*" --psiphon-only "*)
+		if [ ! -x /usr/bin/pt/psiphon-tunnel-core ]; then
+			echo 'Error: Other("psiphon needs the psiphon-tunnel-core console client, and it was not in /usr/bin/pt or on PATH")' >&2
+			exit 1
+		fi
+		echo "mock Psiphon helper loaded"
+		;;
+esac
 echo "mock aether core: $*"
 EOS
 	chmod 755 "$stage/aether"
@@ -336,6 +345,19 @@ assert_log_absent "v1.4.0"
 assert_full_install
 assert_uci main.perf_profile high
 assert_rcd "disable aether"
+run_script - /usr/bin/aether --psiphon-only
+assert_rc 0
+assert_log "mock Psiphon helper loaded"
+
+# Emulate a previously installed core whose Psiphon helper has gone missing.
+# It must fail with the same diagnostic the LuCI status classifier recognizes.
+new_case psiphon-only-helper-missing-at-runtime
+run_install - /pkg/install.sh --non-interactive --no-curl
+assert_rc 0
+rm -f "$C/usr/bin/pt/psiphon-tunnel-core"
+run_script - /usr/bin/aether --psiphon-only
+assert_rc_nonzero
+assert_log "psiphon needs the psiphon-tunnel-core console client"
 
 # Psiphon-capable releases must contain the console helper before replacing
 # an existing core; fail safely rather than installing a guaranteed crash loop.

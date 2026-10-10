@@ -135,12 +135,12 @@ psiphon_mode=reverse
 EOF
 run_case "v2.3.0 psiphon reverse on masque" "--psiphon-reverse --psiphon-bind 127.0.0.1:1821"
 
-# ---- psiphon-only: no bind flag ----
+# ---- psiphon-only works regardless of the WARP protocol ----
 cat >"$MOCK_UCI_FILE" <<'EOF'
-protocol=masque
+protocol=wg
 psiphon_mode=only
 EOF
-run_case "v2.3.0 psiphon only" "--psiphon-only"
+run_case "v2.3.0 psiphon only on wg" "--psiphon-only"
 expect_absent "psiphon only omits --psiphon-bind" "--psiphon-bind"
 
 # ---- exit_loc + stats ----

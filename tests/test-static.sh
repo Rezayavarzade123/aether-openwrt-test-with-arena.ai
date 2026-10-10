@@ -183,4 +183,7 @@ assert_contains files/www/luci-static/resources/view/aether.js 'MASQUE-carried (
 assert_contains files/www/luci-static/resources/view/aether.js 'Verified (measured edges, v2.1+)'
 assert_contains files/www/luci-static/resources/view/aether.js 'Tor Relay Sources'
 assert_contains files/www/luci-static/resources/view/aether.js 'psiphonMode'
+assert_contains files/www/luci-static/resources/view/aether.js 'function aetherPsiphonState'
+assert_contains files/www/luci-static/resources/view/aether.js "psiphonState === 'helper-missing'"
+assert_contains files/www/luci-static/resources/view/aether.js '/usr/bin/pt/psiphon-tunnel-core'
 echo "static checks passed"

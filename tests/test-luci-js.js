@@ -132,6 +132,7 @@ const FN_NAMES = [
 	'aetherCoreSupportsV20',
 	'aetherCoreSupportsV21',
 	'aetherCoreSupportsV23',
+	'aetherPsiphonState',
 	'extractFromLogs',
 	'parseKeyValues'
 ];
@@ -220,6 +221,28 @@ eq('parseKeyValues tolerates null', 0, Object.keys(view.parseKeyValues(null)).le
 eq('parseKeyValues tolerates undefined', 0, Object.keys(view.parseKeyValues(undefined)).length);
 // The /i flag means an upper-case key is still captured.
 eq('parseKeyValues accepts an upper-case key', 'x', view.parseKeyValues('Key=x').Key);
+
+/* ------------------------------------------------------------------------
+ * Psiphon status classification
+ * ---------------------------------------------------------------------- */
+
+const missingPsiphonHelperLog =
+	'Error: Other("psiphon needs the psiphon-tunnel-core console client, and it was not in /usr/bin/pt")';
+eq('Psiphon off is disabled', 'off', view.aetherPsiphonState('off', '2.3.0', '', false));
+eq('Psiphon config on old core is unsupported', 'unsupported',
+	view.aetherPsiphonState('only', '2.0.0', '', false));
+eq('Psiphon only reports its own state', 'only',
+	view.aetherPsiphonState('only', '2.3.0', '', true));
+eq('Psiphon helper failure is surfaced while stopped', 'helper-missing',
+	view.aetherPsiphonState('only', 'v2.3.0', missingPsiphonHelperLog, false));
+eq('stale helper failure is ignored while running', 'only',
+	view.aetherPsiphonState('only', '2.3.0', missingPsiphonHelperLog, true));
+eq('Psiphon tunnel reports enabled', 'enabled',
+	view.aetherPsiphonState('tunnel', '2.3.0', '', true));
+eq('Psiphon reverse reports enabled', 'enabled',
+	view.aetherPsiphonState('reverse', '2.3.0', '', false));
+eq('invalid Psiphon mode is recognized', 'invalid',
+	view.aetherPsiphonState('bad-mode', '2.3.0', '', false));
 
 /* ------------------------------------------------------------------------
  * Capability gates: JS behaviour
